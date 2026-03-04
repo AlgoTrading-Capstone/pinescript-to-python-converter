@@ -12,7 +12,6 @@ import shutil
 import subprocess
 import sys
 import logging
-import threading
 from datetime import datetime, UTC
 from pathlib import Path
 
@@ -64,15 +63,52 @@ def _now_iso() -> str:
 
 
 def _verdict(btc: int, proj: int) -> str:
-    total = btc + proj
-    if total >= 8: return "✅ RECOMMENDED"
-    if total >= 6: return "👍 GOOD"
-    if total >= 4: return "👌 OK"
-    if total >= 2: return "⚠️ COMPLEX"
-    return "❌ SKIP"
+    """
+        Calculates the overall recommendation verdict for a strategy.
 
+        This function evaluates a trading strategy's viability by combining its
+        Bitcoin compatibility score and its project convertibility score into a
+        single metric (max 10 points). It returns a human-readable categorization.
+
+        Args:
+            btc (int): The strategy's suitability for Bitcoin trading (scale 0-5).
+            proj (int): The strategy's code cleanliness and ease of conversion (scale 0-5).
+
+        Returns:
+            str: A formatted string representing the final verdict:
+                - 8 to 10: [+++] RECOMMENDED (Ideal for conversion and BTC trading)
+                - 6 to 7:  [++]  GOOD (Solid strategy, minor adjustments needed)
+                - 4 to 5:  [+]   OK (Passable, but may require manual fixes)
+                - 2 to 3:  [!]   COMPLEX (Hard to convert or poor BTC fit)
+                - 0 to 1:  [-]   SKIP (Not viable for this pipeline)
+        """
+    total = btc + proj
+    # ANSI Color Codes
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    RED = '\033[91m'
+    RESET = '\033[0m'
+
+    if total >= 8: return f"{GREEN}[ RECOMMENDED ]{RESET}"
+    if total >= 6: return f"{GREEN}[ GOOD ]{RESET}"
+    if total >= 4: return f"{YELLOW}[ OK ]{RESET}"
+    if total >= 2: return f"{YELLOW}[ COMPLEX ]{RESET}"
+    return f"{RED}[ SKIP ]{RESET}"
 
 def _div(char="─", width=70) -> str:
+    """
+        Generates a horizontal divider line for terminal UI formatting.
+
+        This helper function creates a string of repeating characters used to
+        visually separate sections in the console output.
+
+        Args:
+            char (str, optional): The character to repeat. Defaults to "─".
+            width (int, optional): The total length of the divider line. Defaults to 70.
+
+        Returns:
+            str: A string containing the repeated character.
+        """
     return char * width
 
 
@@ -80,6 +116,17 @@ def _div(char="─", width=70) -> str:
 # Registry
 # ---------------------------------------------------------------------------
 def load_registry() -> dict:
+    """
+        Loads the strategy registry from a JSON file into a Python dictionary.
+
+        If the registry file exists, it reads and parses the JSON data. It also
+        acts as a self-healing mechanism by purging any excluded placeholder
+        files (like 'source_strategy.pine') that might have been accidentally
+        saved in previous runs. If the file does not exist, it returns an empty dictionary.
+
+        Returns:
+            dict: The current state of the strategies registry.
+        """
     if REGISTRY_PATH.exists():
         data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
         # Purge any excluded placeholder files that crept in from earlier runs.
@@ -93,6 +140,20 @@ def load_registry() -> dict:
 
 
 def save_registry(registry: dict) -> None:
+    """
+        Serializes and saves the strategy registry dictionary to a JSON file.
+
+        This function overwrites the existing registry file with the current state
+        of the dictionary. It formats the JSON with an indentation of 2 spaces
+        for human readability and ensures that non-ASCII characters (like emojis
+        or special symbols) are preserved exactly as they are.
+
+        Args:
+            registry (dict): The current state of the strategies registry to be saved.
+
+        Returns:
+            None
+        """
     REGISTRY_PATH.write_text(
         json.dumps(registry, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -101,6 +162,20 @@ def save_registry(registry: dict) -> None:
 
 
 def scan_and_register(registry: dict) -> dict:
+    """
+        Scans the input directory for new PineScript files and registers them.
+
+        This function looks for all '.pine' files in the designated input folder.
+        It ignores any files present in the exclusion list (e.g., manual placeholders).
+        For every valid file that is not already tracked in the registry, it creates
+        a new entry with a 'new' status and a timestamp.
+
+        Args:
+            registry (dict): The current strategies registry dictionary.
+
+        Returns:
+            dict: The updated registry dictionary containing the newly found files.
+        """
     added = 0
     for pine_file in sorted(INPUT_DIR.glob("*.pine")):
         key = pine_file.name
@@ -124,11 +199,27 @@ def scan_and_register(registry: dict) -> dict:
 # ---------------------------------------------------------------------------
 def run_tv_scraper(max_results: int = 5) -> None:
     """
-    Populate input/ by scraping public TradingView strategies.
-    Exits with a message if no strategies could be downloaded.
+    Populates the input directory by scraping public TradingView strategies.
+
+    This function is triggered as a fallback when the 'input/' directory has
+    fewer than the target number of '.pine' files. It initializes a Selenium-based
+    scraper, suppresses its noisy terminal logs by redirecting them to the file
+    handler, and attempts to fetch source codes. It fetches a surplus of URLs
+    to account for private or un-scrapable scripts.
+
+    Args:
+        max_results (int, optional): The exact number of successful strategy
+            downloads required to fulfill the quota. Defaults to 5.
+
+    Returns:
+        None
+
+    Raises:
+        SystemExit: Exits the program (sys.exit) if required dependencies
+            are missing, if the scraper runtime fails, or if 0 files were saved.
     """
-    print(f"\n🌐  input/ has fewer than {TARGET_STRATEGY_COUNT} strategies. Launching TradingView scraper...")
-    print(f"  Fetching {max_results} more strategy file(s) from TradingView...")
+    print(f"\n[SCRAPER] input/ has fewer than {TARGET_STRATEGY_COUNT} strategies.")
+    print(f"          Fetching {max_results} more strategy file(s) from TradingView...")
     print(_div())
 
     # Block tv_scraper's logging.basicConfig from adding a root StreamHandler.
@@ -140,8 +231,8 @@ def run_tv_scraper(max_results: int = 5) -> None:
     try:
         from src.utils.tv_scraper import TradingViewScraper
     except ImportError as exc:
-        print(f"\n Cannot import TradingViewScraper: {exc}")
-        print("  Install missing deps: pip install selenium webdriver-manager")
+        print(f"\n[!] Cannot import TradingViewScraper: {exc}")
+        print("    Install missing deps: pip install selenium webdriver-manager")
         sys.exit(1)
 
     # Redirect scraper / driver logs to our file handler — off the terminal.
@@ -164,49 +255,69 @@ def run_tv_scraper(max_results: int = 5) -> None:
             for i, url in enumerate(urls, 1):
                 if saved >= max_results:
                     break
+
                 slug = TradingViewScraper._extract_strategy_slug(url)
                 dest = INPUT_DIR / f"{slug}.pine"
+
                 if dest.exists():
                     logger.info(f"Skipping already-downloaded: {slug}")
                     continue
+
                 print(f"  [{saved + 1}/{max_results}] {slug} ... ", end="", flush=True)
+
                 try:
                     pine = scraper.fetch_pinescript(url)
                     scraper.save_to_input(pine, url)
-                    print(f"✅  ({len(pine):,} chars)")
+                    print(f"[OK]  ({len(pine):,} chars)")
                     logger.info(f"Scraped: {slug} ({len(pine)} chars)")
                     saved += 1
                 except NotImplementedError as exc:
                     first_line = str(exc).splitlines()[0]
-                    print(f"⚠️  SKIP — {first_line}")
+                    print(f"[SKIP]  {first_line}")
                     logger.warning(f"Skipped {slug}: {first_line}")
                     failed += 1
                 except Exception as exc:
-                    print(f"❌  ERROR — {exc}")
+                    print(f"[FAIL]  {exc}")
                     logger.exception(f"Error scraping {slug}: {exc}")
                     failed += 1
 
     except RuntimeError as exc:
-        print(f"\n  ❌  Scraper error: {exc}")
+        print(f"\n[FATAL] Scraper runtime error: {exc}")
         logger.error(f"TV scraper runtime error: {exc}")
         sys.exit(1)
 
     print(_div())
-    print(f"  Scraped {saved} strategy file(s) → input/")
+    print(f"  Scraped {saved} strategy file(s) -> input/")
     if failed:
         print(f"  Skipped {failed} file(s) (private or unsupported)")
 
     if saved == 0:
-        print("\n  ❌  No strategies could be scraped.")
-        print("  Manual fallback: paste PineScript into input/source_strategy.pine")
+        print("\n[FAIL] No strategies could be scraped.")
+        print("       Manual fallback: paste PineScript into input/source_strategy.pine")
         sys.exit(1)
-
 
 # ---------------------------------------------------------------------------
 # Phase 0 — Isolated Evaluation
 # ---------------------------------------------------------------------------
 def _parse_json_from_output(raw: str) -> dict:
-    """Defensively strip markdown fences then parse the outer JSON object."""
+    """
+    Defensively parses a JSON object from raw LLM text output.
+
+    Large Language Models often wrap JSON responses in Markdown code blocks
+    or include extraneous conversational text. This function safely extracts
+    the core JSON object by stripping Markdown fences and slicing the string
+    from the first opening curly brace to the last closing curly brace.
+
+    Args:
+        raw (str): The raw text output generated by the AI agent.
+
+    Returns:
+        dict: The parsed JSON object as a Python dictionary.
+
+    Raises:
+        ValueError: If no curly braces representing a JSON object are found
+            within the raw string.
+    """
     cleaned = raw.replace("```json", "").replace("```", "").strip()
     start   = cleaned.find("{")
     end     = cleaned.rfind("}") + 1
@@ -217,9 +328,24 @@ def _parse_json_from_output(raw: str) -> dict:
 
 def evaluate_strategy(pine_file: Path) -> dict | None:
     """
-    Spawn an isolated selector agent for one .pine file.
-    File content is embedded in the prompt so the agent needs no Read tool —
-    this avoids interactive permission prompts that block in subprocess mode.
+    Spawns an isolated AI agent process to evaluate a single PineScript strategy.
+
+    This function runs the 'strategy_selector' Claude agent in a non-interactive
+    subprocess. It securely passes the file path to the agent and uses specific
+    CLI flags (e.g., '--dangerously-skip-permissions') to prevent the agent from
+    blocking on interactive tool-approval prompts. The agent's standard output
+    is streamed in real-time to the logger. A strict 180-second timeout is
+    enforced to prevent infinite hangs.
+
+    Args:
+        pine_file (Path): The pathlib.Path object pointing to the specific
+            .pine file to be evaluated.
+
+    Returns:
+        dict | None: A dictionary containing the structured JSON evaluation
+            (including 'btc_score', 'project_score', and 'pine_metadata') if
+            successful. Returns None if the process fails, times out, or if
+            the output cannot be parsed as valid JSON.
     """
     try:
         raw = pine_file.read_text(encoding="utf-8", errors="replace")
@@ -232,12 +358,12 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
     logger.info(f"CLAUDE input (file path sent to agent):\n{pine_file.resolve()}")
 
     # Invoke the strategy_selector agent via the documented CLI flags:
-    #   -p                          → print (non-interactive) mode
-    #   --agent strategy_selector   → loads .claude/agents/strategy_selector.md
-    #   --dangerously-skip-permissions → auto-approves all tool calls (Read, etc.)
+    #   -p                         -> print (non-interactive) mode
+    #   --agent strategy_selector   -> loads .claude/agents/strategy_selector.md
+    #   --dangerously-skip-permissions -> auto-approves all tool calls (Read, etc.)
     #                                 without this the Read tool blocks forever
     #                                 in a non-TTY subprocess
-    #   --no-session-persistence    → don't write session files for throwaway evals
+    #   --no-session-persistence    -> don't write session files for throwaway evals
     prompt = (
         f"Read and evaluate the PineScript file at this exact path:\n"
         f"{pine_file.resolve()}\n\n"
@@ -264,7 +390,7 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
         )
     except FileNotFoundError:
         logger.error("'claude' command not found for selector.")
-        print("❌  'claude' CLI not found.", flush=True)
+        print("'claude' CLI not found.", flush=True)
         return None
 
     collected: list[str] = []
@@ -273,7 +399,7 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
             stripped = line.rstrip()
             if stripped:
                 print(f"    {stripped}", flush=True)
-                logger.info(f"CLAUDE selector: {stripped}")
+                logger.info(f"CLAUDE [SELECTOR]: {stripped}")
             collected.append(line)
         process.wait(timeout=180)
     except subprocess.TimeoutExpired:
@@ -296,6 +422,23 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
 
 
 def run_evaluations(registry: dict) -> dict:
+    """
+        Manages the batch evaluation process for all pending strategies.
+
+        This function identifies strategies in the registry that need evaluation
+        (either completely 'new' ones, or previously failed ones that scored 0).
+        It iterates through the pending list, invoking the isolated evaluation
+        agent for each file. It validates the output, updates the registry with
+        scores and metadata, and performs an incremental, crash-safe save after
+        each file to prevent data loss in case of an interruption.
+
+        Args:
+            registry (dict): The current strategies registry dictionary.
+
+        Returns:
+            dict: The updated registry dictionary with evaluation results and
+                modified statuses.
+        """
     new_entries = [(k, v) for k, v in registry.items() if v["status"] == "new"]
     # Also retry previously-failed evaluations (both scores = 0).
     retry_entries = [
@@ -308,11 +451,11 @@ def run_evaluations(registry: dict) -> dict:
     if not to_evaluate:
         return registry
 
-    print(f"\n⏳ Evaluating {len(to_evaluate)} strategy file(s)...")
+    print(f"\n Evaluating {len(to_evaluate)} strategy file(s)...")
     print(_div())
 
     for key, rec in to_evaluate:
-        print(f"  ⚙️  {key} ... ", end="", flush=True)
+        print(f"    {key} ... ", end="", flush=True)
         result = evaluate_strategy(Path(rec["file_path"]))
 
         required = {"pine_metadata", "btc_score", "project_score"}
@@ -327,7 +470,7 @@ def run_evaluations(registry: dict) -> dict:
                 "project_score":         proj,
                 "recommendation_reason": result.get("recommendation_reason", ""),
             })
-            print(f"BTC: {'⭐' * btc}  Proj: {'⭐' * proj}  {_verdict(btc, proj)}")
+            print(f"BTC: {'*' * btc}  Proj: {'*' * proj}  {_verdict(btc, proj)}")
         else:
             registry[key].update({
                 "status":                "evaluated",
@@ -339,7 +482,7 @@ def run_evaluations(registry: dict) -> dict:
                 "project_score":         0,
                 "recommendation_reason": "Evaluation failed — scored 0.",
             })
-            print("❌  FAILED (scored 0)")
+            print("   FAILED (scored 0)")
             logger.warning(f"Evaluation failed for {key}")
 
         save_registry(registry)   # crash-safe: save after each file
@@ -352,6 +495,23 @@ def run_evaluations(registry: dict) -> dict:
 # Phase 1 — User Selection
 # ---------------------------------------------------------------------------
 def display_menu(registry: dict) -> tuple[str, dict]:
+    """
+        Renders an interactive CLI menu for strategy selection.
+
+        This function filters the registry for successfully evaluated strategies,
+        verifies that their physical files still exist on disk, and sorts them
+        in descending order based on their combined evaluation scores. It displays
+        a formatted table summarizing the options and prompts the user to select
+        one for conversion. It includes robust error handling for user input,
+        defaulting to the top-ranked strategy if the input is invalid or blank.
+
+        Args:
+            registry (dict): The current strategies registry dictionary.
+
+        Returns:
+            tuple[str, dict]: A tuple containing the selected strategy's filename (key)
+                and its corresponding record dictionary.
+        """
     evaluated = {
         k: v for k, v in registry.items()
         if v["status"] == "evaluated"
@@ -359,7 +519,7 @@ def display_menu(registry: dict) -> tuple[str, dict]:
         and Path(v["file_path"]).exists()
     }
     if not evaluated:
-        print("\n❌  No evaluated strategies found. Exiting.")
+        print("\n  No evaluated strategies found. Exiting.")
         sys.exit(1)
 
     ranked = sorted(
@@ -379,7 +539,7 @@ def display_menu(registry: dict) -> tuple[str, dict]:
         name = key.replace(".pine", "")[:39]
         print(
             f"  [{i}] {name:<40} "
-            f"{'⭐' * btc:>3} {'⭐' * proj:>4}  {_verdict(btc, proj)}"
+            f"{'*' * btc:>3} {'*' * proj:>4}  {_verdict(btc, proj)}"
         )
     print(_div())
 
@@ -396,11 +556,11 @@ def display_menu(registry: dict) -> tuple[str, dict]:
             if not (0 <= idx < len(ranked)):
                 raise ValueError
         except ValueError:
-            print("  ⚠️  Invalid input — defaulting to #1.")
+            print("    Invalid input — defaulting to #1.")
             idx = 0
 
     chosen_key, chosen_rec = ranked[idx]
-    print(f"\n  ✅  Selected: {chosen_key}\n")
+    print(f"\n    Selected: {chosen_key}\n")
     return chosen_key, chosen_rec
 
 
@@ -408,6 +568,24 @@ def display_menu(registry: dict) -> tuple[str, dict]:
 # Phase 2-5 — Orchestrator
 # ---------------------------------------------------------------------------
 def _setup_strategy_logger(strategy_name: str) -> tuple[logging.Logger, Path]:
+    """
+        Initializes an isolated, timestamped logger for a specific conversion run.
+
+        To maintain clean organization and facilitate easy debugging, this function
+        creates a dedicated directory structure for each strategy conversion attempt
+        (e.g., 'logs/<safe_strategy_name>/<timestamp>/'). It attaches two separate
+        file handlers: one for the complete trace log (DEBUG level) and one
+        strictly for fatal issues (ERROR level). Propagation is disabled to prevent
+        these detailed logs from bleeding into the main terminal output.
+
+        Args:
+            strategy_name (str): The original name of the strategy to be sanitized
+                and used as the directory name.
+
+        Returns:
+            tuple[logging.Logger, Path]: A tuple containing the configured Logger
+                instance and the Path object pointing to the newly created run directory.
+        """
     ts       = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S")
     safe     = strategy_name.replace(" ", "_").replace("/", "-")
     run_dir  = LOGS_ROOT / safe / ts
@@ -415,6 +593,7 @@ def _setup_strategy_logger(strategy_name: str) -> tuple[logging.Logger, Path]:
 
     lg  = logging.getLogger(f"runner.orch.{safe}.{ts}")
     lg.setLevel(logging.DEBUG)
+    lg.propagate = False
     fmt = logging.Formatter("%(asctime)s | %(levelname)-8s | %(message)s", "%Y-%m-%d %H:%M:%S")
 
     for path, level in [
@@ -435,13 +614,29 @@ def run_orchestrator(
     output_dir: Path,
 ) -> tuple[bool, Path]:
     """
-    Invoke orchestrator sub-agent.
-    Terminal shows only progress; subprocess output goes to log files.
-    Returns (success, run_dir).
+    Executes the main AI orchestrator agent to convert a PineScript strategy.
+
+    This function triggers the Claude CLI in a subprocess with the orchestrator
+    agent loaded. It streams the standard output in real-time, functioning as a
+    state machine to parse logging protocol triggers (e.g., 'handing over to:').
+    This dynamically routes the log prefixes so that actions from sub-agents
+    (Transpiler, Validator, etc.) are clearly identified in both the terminal
+    and the log files. A strict 15-minute (900s) timeout is enforced.
+
+    Args:
+        pine_file (Path): The file path to the source PineScript strategy.
+        meta (dict): The strategy metadata containing its name, timeframe, etc.
+        output_dir (Path): The target directory where the converted Python
+            artifacts should be saved.
+
+    Returns:
+        tuple[bool, Path]: A boolean flag indicating whether the orchestrator
+            completed its run successfully (return code 0), and the Path object
+            pointing to the dedicated log directory for this run.
     """
     strat_logger, run_dir = _setup_strategy_logger(meta["name"])
-    print(f"  ⚙️  Launching orchestrator for '{meta['name']}'...")
-    print(f"  📁  Log : {run_dir / 'run.log'}")
+    print(f"     Launching orchestrator for '{meta['name']}'...")
+    print(f"     Log : {run_dir / 'run.log'}")
 
     prompt = (
         "Start the conversion workflow.\n\n"
@@ -477,12 +672,32 @@ def run_orchestrator(
             bufsize=1,
             env=_SUBPROCESS_ENV,
         )
+        current_agent = "ORCHESTRATOR"
+
         for line in process.stdout:
             stripped = line.rstrip()
-            if stripped:
-                print(f"  {stripped}", flush=True)
-                strat_logger.info(f"CLAUDE response: {stripped}")
-        process.wait(timeout=900)   # 15 min hard cap
+            if not stripped:
+                continue
+
+
+            lower_line = stripped.lower()
+            if "handing over to: transpiler" in lower_line or "agent transpiler" in lower_line:
+                current_agent = "TRANSPILER"
+            elif "handing over to: validator" in lower_line or "agent validator" in lower_line:
+                current_agent = "VALIDATOR"
+            elif "handing over to: test_generator" in lower_line or "agent test_generator" in lower_line:
+                current_agent = "QA_AGENT"
+            elif "handing over to: integration" in lower_line or "agent integration" in lower_line:
+                current_agent = "INTEGRATION"
+            elif "control returned to: orchestrator" in lower_line:
+                current_agent = "ORCHESTRATOR"
+
+
+            print(f"  [{current_agent}] {stripped}", flush=True)
+
+            strat_logger.info(f"[{current_agent}] {stripped}")
+
+        process.wait(timeout=900) # 15 minutes-hard cap
 
         if process.returncode == 0:
             strat_logger.info("Orchestrator completed successfully.")
@@ -493,11 +708,11 @@ def run_orchestrator(
     except subprocess.TimeoutExpired:
         process.kill()
         strat_logger.error("Orchestrator timed out after 900s.")
-        print("\n  ❌  Orchestrator timed out (15 min).", flush=True)
+        print("\n    Orchestrator timed out (15 min).", flush=True)
         return False, run_dir
     except FileNotFoundError:
         strat_logger.error("'claude' command not found.")
-        print("\n  ❌  'claude' CLI not found. Is Claude Code installed and in PATH?")
+        print("\n    'claude' CLI not found. Is Claude Code installed and in PATH?")
         return False, run_dir
     except Exception as e:
         strat_logger.exception(f"Unexpected error: {e}")
@@ -505,6 +720,28 @@ def run_orchestrator(
 
 
 def copy_artifacts(meta: dict, output_dir: Path, run_dir: Path) -> None:
+    """
+        Gathers and packages the final generated Python artifacts.
+
+        Once the orchestrator completes its workflow, this function searches
+        the designated project directories ('src/strategies' and 'tests/strategies')
+        for the generated Python code and its corresponding unit tests using
+        the strategy's sanitized safe name. It copies these files, along with
+        the execution trace log, into a single, organized snapshot directory.
+        The copied files are renamed to standard conventions ('strategy.py'
+        and 'test_strategy.py') for consistency.
+
+        Args:
+            meta (dict): The strategy metadata containing the 'safe_name' used
+                to identify the generated files.
+            output_dir (Path): The target snapshot directory where the
+                packaged artifacts will be stored.
+            run_dir (Path): The temporary logging directory containing the
+                'run.log' file for this specific conversion attempt.
+
+        Returns:
+            None
+        """
     safe = meta.get("safe_name", "")
     for src in Path("src/strategies").glob(f"*{safe}*.py"):
         shutil.copy2(src, output_dir / "strategy.py")
@@ -524,8 +761,25 @@ def copy_artifacts(meta: dict, output_dir: Path, run_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 def archive_remaining(registry: dict, selected_key: str) -> dict:
     """
-    Archive only LOW-SCORING strategies (btc + proj < ARCHIVE_SCORE_THRESHOLD).
-    High-scoring unselected strategies remain 'evaluated' for future runs.
+    Archives low-scoring strategies while retaining viable candidates for future runs.
+
+    This function iterates over all evaluated strategies in the registry. It skips
+    the strategy that was just selected for conversion. For the remaining strategies,
+    it calculates the total evaluation score. If the score is below the predefined
+    ARCHIVE_SCORE_THRESHOLD, the physical '.pine' file is moved to the 'archive/'
+    directory, and its registry status is updated to 'archived'. Strategies meeting
+    or exceeding the threshold are left untouched in the 'input/' directory with
+    their 'evaluated' status intact, allowing them to populate the CLI menu in
+    subsequent runs without requiring re-evaluation.
+
+    Args:
+        registry (dict): The current strategies registry dictionary.
+        selected_key (str): The filename (key) of the strategy that the user
+            selected for conversion during the current run.
+
+    Returns:
+        dict: The updated registry dictionary reflecting the new file paths
+            and 'archived' statuses.
     """
     ARCHIVE_DIR.mkdir(exist_ok=True)
     archived = 0
@@ -576,7 +830,7 @@ if __name__ == "__main__":
         run_tv_scraper(max_results=needed)
 
     # Step 1 — Scan & Register
-    print("\n📂  Scanning input/ for .pine files...")
+    print("\n  Scanning input/ for .pine files...")
     registry = load_registry()
     registry = scan_and_register(registry)
     save_registry(registry)
@@ -605,14 +859,14 @@ if __name__ == "__main__":
             "output_dir":   str(out_dir),
         })
         save_registry(registry)
-        print(f"\n✅  Conversion complete!")
+        print(f"\n  Conversion complete!")
         print(f"    Artifacts → {out_dir}")
     else:
-        print(f"\n❌  Orchestrator failed. See: {run_dir / 'run.log'}")
+        print(f"\n  Orchestrator failed. See: {run_dir / 'run.log'}")
         sys.exit(1)
 
     # Step 5 — Smart archive
-    print("\n🗂️  Archiving low-scoring strategies...")
+    print("\n  Archiving low-scoring strategies...")
     registry = archive_remaining(registry, chosen_key)
     save_registry(registry)
-    print("\n✅  Done.\n")
+    print("\n  Done.\n")

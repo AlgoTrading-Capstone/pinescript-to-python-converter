@@ -49,3 +49,8 @@ The prompt will contain:
 - `PineScript file` path — use your **Read tool** to load it from disk
 
 Proceed DIRECTLY to Phase 1. Do NOT re-evaluate strategy selection.
+
+# Key Notes
+- Whenever you delegate a task to a sub-agent, you MUST explicitly print: [SYSTEM] Handing over to: <AgentName>.
+- When the sub-agent finishes, print: [SYSTEM] Control returned to: Orchestrator.
+- - You MUST strictly follow the communication protocol defined in `.claude/skills/LOGGING/SKILL.md`. Ensure you announce all agent handoffs explicitly.
