@@ -401,30 +401,33 @@ def compute_supertrend(df: pd.DataFrame, factor: float, atr_period: int):
         prev_upper = upper_band.iloc[i - 1] if not pd.isna(supertrend.iloc[i - 1]) else upper_band.iloc[i]
         prev_lower = lower_band.iloc[i - 1] if not pd.isna(supertrend.iloc[i - 1]) else lower_band.iloc[i]
 
+        idx = df.index[i]
+        prev_idx = df.index[i - 1]
+
         if lower_band.iloc[i] > prev_lower or df['close'].iloc[i - 1] < prev_lower:
-            lower_band.iloc[i] = lower_band.iloc[i]
+            lower_band.at[idx] = lower_band.iloc[i]
         else:
-            lower_band.iloc[i] = prev_lower
+            lower_band.at[idx] = prev_lower
 
         if upper_band.iloc[i] < prev_upper or df['close'].iloc[i - 1] > prev_upper:
-            upper_band.iloc[i] = upper_band.iloc[i]
+            upper_band.at[idx] = upper_band.iloc[i]
         else:
-            upper_band.iloc[i] = prev_upper
+            upper_band.at[idx] = prev_upper
 
-        if direction.iloc[i - 1] == 1:  # was bullish
-            if df['close'].iloc[i] < lower_band.iloc[i]:
-                direction.iloc[i] = -1
-                supertrend.iloc[i] = upper_band.iloc[i]
+        if direction.at[prev_idx] == 1:  # was bullish
+            if df['close'].iloc[i] < lower_band.at[idx]:
+                direction.at[idx] = -1
+                supertrend.at[idx] = upper_band.at[idx]
             else:
-                direction.iloc[i] = 1
-                supertrend.iloc[i] = lower_band.iloc[i]
+                direction.at[idx] = 1
+                supertrend.at[idx] = lower_band.at[idx]
         else:  # was bearish
-            if df['close'].iloc[i] > upper_band.iloc[i]:
-                direction.iloc[i] = 1
-                supertrend.iloc[i] = lower_band.iloc[i]
+            if df['close'].iloc[i] > upper_band.at[idx]:
+                direction.at[idx] = 1
+                supertrend.at[idx] = lower_band.at[idx]
             else:
-                direction.iloc[i] = -1
-                supertrend.iloc[i] = upper_band.iloc[i]
+                direction.at[idx] = -1
+                supertrend.at[idx] = upper_band.at[idx]
 
     return supertrend, direction
 ```
@@ -594,7 +597,7 @@ htfSma   = request.security(syminfo.tickerid, "240", ta.sma(close, 14))
 
 ```python
 # Python — MANDATORY pattern
-from src.utils.resample import resample_to_interval, resampled_merge
+from src.utils.resampling import resample_to_interval, resampled_merge
 
 # Step 1: Resample base df to higher timeframe
 resampled_df = resample_to_interval(df, "4h")

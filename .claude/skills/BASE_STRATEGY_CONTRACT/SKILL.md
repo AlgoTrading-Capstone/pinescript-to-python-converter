@@ -12,24 +12,28 @@ You are strictly forbidden from modifying `src/base_strategy.py`.
    import pandas as pd
    from src.base_strategy import BaseStrategy, StrategyRecommendation, SignalType
    ```
-Initialization (__init__): The strategy class must implement an __init__ method that explicitly calls the parent class constructor with the required parameters.
+### Initialization (`__init__`)
+The strategy class must implement an `__init__` method that explicitly calls the parent class constructor with the required parameters.
 
-```Python
+```python
 def __init__(self):
     # The child class must define the specific strategy details
     super().__init__(
-        name="StrategyName", 
-        description="Strategy Description", 
+        name="StrategyName",
+        description="Strategy Description",
         timeframe="15m",  # Example, extract from PineScript
         lookback_hours=24  # Example, extract from PineScript
     )
- ```
-The run Method:
-The strategy MUST implement the abstract run method with the exact signature:
+```
 
-Python
+### The `run` Method
+The strategy MUST implement the abstract `run` method with the exact signature:
+
+```python
 def run(self, df: pd.DataFrame, timestamp: datetime) -> StrategyRecommendation:
-Return Type: The run method MUST return a StrategyRecommendation object. The signal must be one of the SignalType enums: LONG, SHORT, FLAT, or HOLD.
+```
+
+**Return Type:** The `run` method MUST return a `StrategyRecommendation` object. The signal must be one of the `SignalType` enums: `LONG`, `SHORT`, `FLAT`, or `HOLD`.
 
 Validation:
 Any generated strategy that does not fulfill this exact contract is considered a FAILURE and must be rejected by the Validator Agent.

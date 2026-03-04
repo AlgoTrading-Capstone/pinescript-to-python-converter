@@ -2,6 +2,17 @@
 
 This document defines the step-by-step execution flow for the Orchestrator Agent.
 
+## Phase 0: Strategy Selection (Pre-flight — handled by runner.py)
+- `runner.py` scans `input/` and registers all .pine files in
+  `strategies_registry.json`.
+- Each new file is evaluated **in isolation** by the `strategy_selector` agent,
+  which returns a JSON object with BTC + project scores.
+- The user picks one strategy from a ranked table.
+- Low-scoring strategies (total < 4) are moved to `archive/`.
+- High-scoring unselected strategies remain `"evaluated"` for future runs.
+
+The Orchestrator is only invoked AFTER this step and starts at Phase 1.
+
 ## Phase 1: Ingestion & Transpilation
 1. **Input:** Receive PineScript code and Metadata.
 2. **Action:** Call **Transpiler Agent**.

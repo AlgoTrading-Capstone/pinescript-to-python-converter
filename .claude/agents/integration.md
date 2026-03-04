@@ -26,7 +26,7 @@ You have access to GitHub MCP tools to:
      - **Original PineScript:** (User provided)
      - **Converted Python:** `src/strategies/<name>.py`
      - **Tests:** `tests/strategies/test_<name>.py`
-     
+
      **Action Required:** Please perform a Code Review and approve for merge.
      ```
 

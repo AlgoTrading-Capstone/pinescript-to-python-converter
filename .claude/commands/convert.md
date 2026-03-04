@@ -1,7 +1,7 @@
 <!-- .claude/commands/convert.md -->
 ---
 description: Convert a PineScript file to Python strategy
-allowed-tools: Task, Read, Write, Bash
+allowed-tools: Agent, Read, Write, Bash
 ---
 
 # Convert PineScript Strategy

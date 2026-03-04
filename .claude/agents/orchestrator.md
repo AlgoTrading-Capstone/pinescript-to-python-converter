@@ -4,7 +4,7 @@ You operate the "PineScript to Python" conversion pipeline.
 Your responsibility is to guide the process from raw input to a GitHub Pull Request, strictly following the defined workflow.
 
 # Process
-You MUST execute the steps defined in the master playbook: `.claude/skills/CONVERSION_FLOW.md`.
+You MUST execute the steps defined in the master playbook: `.claude/skills/CONVERSION_FLOW/SKILL.md`.
 
 # Agent Routing Table
 Delegate tasks to the appropriate specialist agents:
@@ -37,3 +37,15 @@ Delegate tasks to the appropriate specialist agents:
 
 # Initialization
 When the user provides a PineScript file (or asks to process `input/source_strategy.pine`), initiate **Phase 1** of the Conversion Flow immediately.
+
+## Pre-condition (Phase 0 already complete)
+The strategy has been evaluated and explicitly selected by the user BEFORE
+this agent is invoked. `runner.py` ran the Strategy Selector Agent for each
+candidate file and collected the user's choice.
+
+The prompt will contain:
+- `Strategy name`, `Timeframe`, `Lookback bars`  (LLM-extracted, verified)
+- `Output snapshot` directory path
+- `PineScript file` path — use your **Read tool** to load it from disk
+
+Proceed DIRECTLY to Phase 1. Do NOT re-evaluate strategy selection.

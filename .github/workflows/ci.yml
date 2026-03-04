@@ -26,8 +26,8 @@
 #      run: |
 #        python -m pip install --upgrade pip
 #        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-#        # Need to install ta-lib binary specifically on Linux runner
-#        wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+#        # Install TA-Lib C library from source
+#        wget https://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
 #        tar -xzf ta-lib-0.4.0-src.tar.gz
 #        cd ta-lib/
 #        ./configure --prefix=/usr

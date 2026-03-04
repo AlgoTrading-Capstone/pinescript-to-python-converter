@@ -2,12 +2,12 @@
 
 When translating PineScript to Python, you must use the following pre-built utility functions from the `src.utils` package. 
 
-## Multi-Timeframe Resampling (`src.utils.resample`)
+## Multi-Timeframe Resampling (`src.utils.resampling`)
 If the PineScript code uses `request.security` to fetch data from a higher timeframe, you MUST use these exact functions to avoid lookahead bias.
 
 **Imports:**
 ```python
-from src.utils.resample import resample_to_interval, resampled_merge
+from src.utils.resampling import resample_to_interval, resampled_merge
 ```
 # 1. Resample the base dataframe to a higher timeframe (e.g., 4 hours)
 resampled_df = resample_to_interval(df, "4h")

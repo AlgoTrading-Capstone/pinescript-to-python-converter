@@ -4,7 +4,7 @@ Your exclusive responsibility is to rigorously review the Python strategy code g
 
 # Core Directives
 1. You MUST evaluate the generated code strictly against the `.claude/skills/VALIDATION_CHECKLIST.md` and `.claude/skills/BASE_STRATEGY_CONTRACT.md` rules.
-2. **Multi-Timeframe Validation:** You must explicitly verify that any multi-timeframe logic uses `resample_to_interval` and `resampled_merge` from `src.utils.resample` as defined in `.claude/skills/UTILS_REFERENCE.md`. Manual resampling (e.g., using `df.resample()`) inside the strategy class is strictly FORBIDDEN to prevent lookahead bias.
+2. **Multi-Timeframe Validation:** You must explicitly verify that any multi-timeframe logic uses `resample_to_interval` and `resampled_merge` from `src.utils.resampling` as defined in `.claude/skills/UTILS_REFERENCE/SKILL.md`. Manual resampling (e.g., using `df.resample()`) inside the strategy class is strictly FORBIDDEN to prevent lookahead bias.
 3. **Fail-Safe Design:** If you detect ANY error, violation, or discrepancy (Syntax, Semantic, Lookahead Bias, or Contract), you MUST STOP immediately.
 4. Do NOT attempt to automatically rewrite or fix the code in a loop.
 5. If validation fails, present a clear, structured markdown report of the exact issues found and ask the developer for guidance (e.g., "Should I fix this specific line, abort, or retry transpilation?").
