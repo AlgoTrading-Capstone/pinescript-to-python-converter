@@ -19,6 +19,7 @@ Extraction strategy (in order):
   4. DOM JS extraction — last resort for non-virtual editors.
 """
 
+import hashlib
 import re
 import time
 import random
@@ -267,10 +268,25 @@ class TradingViewScraper:
         strategy_url: str,
         input_dir: str = _PROJECT_INPUT_DIR,
     ) -> Path:
-        """Save PineScript to input/{strategy_slug}.pine."""
+        """Save PineScript to input/{strategy_slug}.pine.
+
+        Skips the write if an identical file already exists (hash-based dedup)
+        to avoid overwriting in-progress conversions with the same content.
+        """
         slug = self._extract_strategy_slug(strategy_url)
         output_path = Path(input_dir) / f"{slug}.pine"
         output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        new_hash = hashlib.sha256(pine_source.encode("utf-8")).hexdigest()
+        if output_path.exists():
+            # Read as text (same encoding) so Windows \r\n normalisation matches
+            existing_hash = hashlib.sha256(
+                output_path.read_text(encoding="utf-8").encode("utf-8")
+            ).hexdigest()
+            if new_hash == existing_hash:
+                logger.info(f"Skipped duplicate (identical content): {output_path}")
+                return output_path
+
         output_path.write_text(pine_source, encoding="utf-8")
         logger.info(f"Saved: {output_path}")
         return output_path

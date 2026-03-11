@@ -58,6 +58,10 @@ class SimpleMACrossoverStrategy(BaseStrategy):
         short_condition = (short_ma < long_ma) & (short_ma.shift(1) >= long_ma.shift(1))
 
         # === SIGNAL EVALUATION (last complete bar) ===
+        # Guard: return HOLD during indicator warmup (first long_length bars have NaN SMAs)
+        if np.isnan(short_ma.iloc[-1]) or np.isnan(long_ma.iloc[-1]):
+            return StrategyRecommendation(SignalType.HOLD, timestamp)
+
         is_long = bool(long_condition.iloc[-1])
         is_short = bool(short_condition.iloc[-1])
 

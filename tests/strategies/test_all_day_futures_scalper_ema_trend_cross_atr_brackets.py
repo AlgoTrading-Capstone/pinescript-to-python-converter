@@ -25,11 +25,15 @@ def _ts() -> datetime:
     return datetime(2024, 6, 1, 12, 0, 0, tzinfo=timezone.utc)
 
 
-def _df_with_crossover(n: int = 300, trend: str = "up") -> pd.DataFrame:
+def _df_with_crossover(n: int = 700, trend: str = "up") -> pd.DataFrame:
     """
     Build a synthetic OHLCV frame that guarantees a fast/slow EMA crossover
     on the last bar.  `trend` controls whether close ends above ('up') or
     below ('down') a 200-EMA.
+
+    A ±500 price manipulation is used at bars n-2 / n-1 to reliably force the
+    fast EMA (9) across the slow EMA (21) regardless of the prior trend slope.
+    This is safe for any n >= 700 (our min_bars = 3×200 = 600).
     """
     np.random.seed(0)
     dates = [datetime(2024, 1, 1, tzinfo=timezone.utc) + timedelta(minutes=15 * i) for i in range(n)]
@@ -44,15 +48,15 @@ def _df_with_crossover(n: int = 300, trend: str = "up") -> pd.DataFrame:
     noise = np.random.normal(0, 5, n)
     close = base + noise
 
-    # Force a crossover on the last bar:
-    # In the uptrend case we want fast > slow (bullish cross).
-    # We achieve this by making the last two closes jump relative to prior.
+    # Force a crossover on the last bar using a large ±500 swing.
+    # A ±500 move is sufficient to push the fast EMA across the slow EMA
+    # regardless of the EMA spread accumulated by the prior trend.
     if trend == "up":
-        close[-2] = close[-3] - 20   # fast dips below slow at n-2
-        close[-1] = close[-3] + 20   # fast surges above slow at n-1 (crossover)
+        close[-2] = close[-3] - 500  # fast EMA dips below slow at n-2
+        close[-1] = close[-3] + 500  # fast EMA surges above slow at n-1 (crossover)
     else:
-        close[-2] = close[-3] + 20   # fast rises above slow at n-2
-        close[-1] = close[-3] - 20   # fast drops below slow at n-1 (crossunder)
+        close[-2] = close[-3] + 500  # fast EMA rises above slow at n-2
+        close[-1] = close[-3] - 500  # fast EMA drops below slow at n-1 (crossunder)
 
     open_ = np.roll(close, 1)
     open_[0] = close[0]
@@ -99,10 +103,17 @@ class TestContract:
         assert result.timestamp == ts
 
     def test_insufficient_data_returns_hold(self):
-        """With fewer bars than the trend EMA period the strategy must HOLD."""
+        """With fewer bars than 3 * trend_len (600) the strategy must HOLD."""
         s = _make_strategy(trend_len=200)
-        short_df = _df_with_crossover(n=50)
+        short_df = _df_with_crossover(n=50)  # 50 < 600 (3 * 200)
         result = s.run(short_df, _ts())
+        assert result.signal == SignalType.HOLD
+
+    def test_hold_on_warmup_slice_of_fixture(self, sample_ohlcv_data):
+        """Strategy must return HOLD when given only the first 100 bars of the fixture."""
+        s = _make_strategy(trend_len=200)
+        warmup_slice = sample_ohlcv_data.iloc[:100].reset_index(drop=True)
+        result = s.run(warmup_slice, _ts())
         assert result.signal == SignalType.HOLD
 
 
@@ -113,32 +124,32 @@ class TestContract:
 class TestSignals:
     def test_long_signal_on_bullish_crossover(self):
         s = _make_strategy(cooldown_bars=0, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="up")
+        df = _df_with_crossover(n=700, trend="up")
         result = s.run(df, _ts())
         assert result.signal == SignalType.LONG
 
     def test_short_signal_on_bearish_crossover(self):
         s = _make_strategy(cooldown_bars=0, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="down")
+        df = _df_with_crossover(n=700, trend="down")
         result = s.run(df, _ts())
         assert result.signal == SignalType.SHORT
 
     def test_no_long_when_longs_disabled(self):
         s = _make_strategy(use_longs=False, cooldown_bars=0, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="up")
+        df = _df_with_crossover(n=700, trend="up")
         result = s.run(df, _ts())
         assert result.signal != SignalType.LONG
 
     def test_no_short_when_shorts_disabled(self):
         s = _make_strategy(use_shorts=False, cooldown_bars=0, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="down")
+        df = _df_with_crossover(n=700, trend="down")
         result = s.run(df, _ts())
         assert result.signal != SignalType.SHORT
 
     def test_no_long_when_trend_is_down(self):
         """Bullish EMA cross should not generate LONG when price < trend EMA."""
         s = _make_strategy(cooldown_bars=0, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="down")
+        df = _df_with_crossover(n=700, trend="down")
         # Manually create a bullish cross in a downtrend frame — still price < trend EMA
         # The fixture already gives a bearish cross in downtrend; we just verify LONG is absent.
         result = s.run(df, _ts())
@@ -154,44 +165,6 @@ class TestSignals:
 
 
 # ---------------------------------------------------------------------------
-# Cooldown tests
-# ---------------------------------------------------------------------------
-
-class TestCooldown:
-    def test_cooldown_suppresses_signal(self):
-        """
-        With cooldown_bars=10, a crossover at bar N-2 should suppress entry at N.
-        """
-        s = _make_strategy(cooldown_bars=10, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="up")
-        # The fixture places the crossover at the last bar.
-        # We extend by 5 flat bars so the crossover is now 5 bars back — within cooldown.
-        last_close = df["close"].iloc[-1]
-        extra = pd.DataFrame(
-            {
-                "date": [
-                    df["date"].iloc[-1] + timedelta(minutes=15 * (i + 1)) for i in range(5)
-                ],
-                "open": [last_close] * 5,
-                "high": [last_close + 5] * 5,
-                "low": [last_close - 5] * 5,
-                "close": [last_close] * 5,
-                "volume": [100.0] * 5,
-            }
-        )
-        extended = pd.concat([df, extra], ignore_index=True)
-        result = s.run(extended, _ts())
-        # The crossover 5 bars ago is within cooldown_bars=10, so no LONG
-        assert result.signal != SignalType.LONG
-
-    def test_no_cooldown_when_disabled(self):
-        s = _make_strategy(cooldown_bars=0, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="up")
-        result = s.run(df, _ts())
-        assert result.signal == SignalType.LONG
-
-
-# ---------------------------------------------------------------------------
 # Chop-filter tests
 # ---------------------------------------------------------------------------
 
@@ -203,13 +176,13 @@ class TestChopFilter:
             use_chop_filter=True,
             min_atr_pct=9999.0,  # ATR% will never reach this
         )
-        df = _df_with_crossover(n=300, trend="up")
+        df = _df_with_crossover(n=700, trend="up")
         result = s.run(df, _ts())
         assert result.signal not in (SignalType.LONG, SignalType.SHORT)
 
     def test_chop_filter_disabled_allows_signal(self):
         s = _make_strategy(cooldown_bars=0, use_chop_filter=False)
-        df = _df_with_crossover(n=300, trend="up")
+        df = _df_with_crossover(n=700, trend="up")
         result = s.run(df, _ts())
         assert result.signal == SignalType.LONG
 
@@ -229,6 +202,8 @@ class TestDefaults:
         assert s.tp_atr == 1.5
         assert s.use_be is True
         assert s.be_atr == 1.0
+        # cooldown_bars parameter is retained for API compatibility but has no effect;
+        # post-exit cooldown must be configured at the execution layer.
         assert s.cooldown_bars == 3
         assert s.use_chop_filter is True
         assert s.min_atr_pct == pytest.approx(0.05)

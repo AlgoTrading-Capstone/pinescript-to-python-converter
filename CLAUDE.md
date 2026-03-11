@@ -76,6 +76,34 @@ Implement in pure Pandas when TA-Lib lacks them:
 - **Supertrend:** Custom ATR band logic
 - **VWAP:** `(cumulative price×volume) / cumulative volume`
 
+## Strategy Naming Convention
+
+`runner.py`'s `safe_name()` converts the Pine filename to snake_case for the Python module name (e.g., `My-Strategy.pine` → `my_strategy`). Generated files follow this pattern:
+- `src/strategies/<safe_name>.py`
+- `tests/strategies/test_<safe_name>.py`
+
+## Registry State Machine
+
+`strategies_registry.json` tracks each `.pine` file through these lifecycle states:
+
+```
+new → evaluated → selected → converted → archived
+                           ↘ failed (retry via menu)
+```
+
+Each entry stores the file path, scores (`btc_score`, `project_score`), `recommendation_reason`, and current `status`.
+
+## Test Fixture
+
+`tests/conftest.py` provides a single shared fixture `sample_ohlcv_data`:
+- 1,100 candles at 15m intervals (seed=42, fully deterministic)
+- Phase 0 (0–600): Warmup — flat at 10,000 for indicator convergence (EMA-200 etc. stabilise here)
+- Phase 1 (600–700): Sideways / Accumulation (low volatility)
+- Phase 2 (700–900): Bull Run (10,000 → 12,000)
+- Phase 3 (900–1,100): Bear Crash (12,000 → 9,000)
+
+All generated strategy tests must use this fixture. The warmup phase ensures `min_bars` guards are exercised; the 3 market-regime phases ensure signal logic is tested across varied conditions.
+
 ## Key Files
 
 | File | Purpose |
@@ -84,9 +112,12 @@ Implement in pure Pandas when TA-Lib lacks them:
 | `strategies_registry.json` | State tracker for all `.pine` files (new → evaluated → selected → converted → archived) |
 | `src/base_strategy.py` | Abstract base class all strategies must inherit |
 | `src/utils/resampling.py` | MTF utilities (`resample_to_interval`, `resampled_merge`) |
+| `src/utils/timeframes.py` | Timeframe helpers: `timeframe_to_minutes`, `timeframe_to_cron`, candle arithmetic |
 | `src/utils/tv_scraper.py` | Selenium scraper for TradingView public strategies |
-| `tests/conftest.py` | `sample_ohlcv_data` fixture (500 candles: sideways/bull/bear phases) |
+| `tests/conftest.py` | `sample_ohlcv_data` fixture (1,100 candles: warmup + sideways/bull/bear phases) |
+| `tests/integrations/` | Importability smoke tests for all generated strategies |
 | `.claude/agents/` | Agent persona definitions |
+| `.github/workflows/ci.yml` | CI pipeline definition — fully commented out (disabled), runs `pytest tests/strategies/` |
 
 ## `/convert` Slash Command
 

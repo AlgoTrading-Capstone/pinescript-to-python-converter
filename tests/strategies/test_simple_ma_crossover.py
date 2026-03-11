@@ -136,6 +136,37 @@ class TestDataIntegrity:
 # Test 4 — Signal logic: LONG (crossover — SMA-9 crosses above SMA-21)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Test 3b — Warmup guard
+# ---------------------------------------------------------------------------
+
+class TestWarmup:
+    def test_hold_when_fewer_bars_than_long_period(self):
+        """Returns HOLD when fewer than long_length (21) bars are provided."""
+        strategy = SimpleMACrossoverStrategy()
+        tiny_df = _make_df([100.0] * 10)  # 10 bars < SMA-21 period
+        result = strategy.run(tiny_df, datetime(2024, 1, 1, tzinfo=timezone.utc))
+        assert result.signal == SignalType.HOLD
+
+    def test_hold_at_exact_warmup_boundary(self):
+        """20 bars: SMA-9 is valid but SMA-21 is NaN on the last bar -> HOLD."""
+        strategy = SimpleMACrossoverStrategy()
+        boundary_df = _make_df([100.0] * 20)  # exactly long_length - 1
+        result = strategy.run(boundary_df, datetime(2024, 1, 1, tzinfo=timezone.utc))
+        assert result.signal == SignalType.HOLD
+
+    def test_hold_on_warmup_slice_of_fixture(self, sample_ohlcv_data):
+        """Strategy returns HOLD for any slice shorter than long_length bars."""
+        strategy = SimpleMACrossoverStrategy()
+        warmup_slice = sample_ohlcv_data.iloc[:10].reset_index(drop=True)
+        result = strategy.run(warmup_slice, warmup_slice.iloc[-1]["date"])
+        assert result.signal == SignalType.HOLD
+
+
+# ---------------------------------------------------------------------------
+# Test 4 — Signal logic: LONG (crossover — SMA-9 crosses above SMA-21)
+# ---------------------------------------------------------------------------
+
 class TestLongSignal:
     def _build_crossover_df(self) -> pd.DataFrame:
         """

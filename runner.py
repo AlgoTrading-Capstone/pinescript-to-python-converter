@@ -155,10 +155,10 @@ def save_registry(registry: dict) -> None:
         Returns:
             None
         """
-    REGISTRY_PATH.write_text(
-        json.dumps(registry, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    # Atomic write: write to a temp file then rename to avoid corruption on crash.
+    tmp = REGISTRY_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(registry, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(REGISTRY_PATH)
     logger.debug("Registry saved.")
 
 
@@ -430,6 +430,9 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
         process.wait()
     finally:
         watchdog.cancel()
+        # terminate() is the cleanup path when an exception bypassed process.wait()
+        if process.poll() is None:
+            process.terminate()
 
     if killed_by_watchdog.is_set():
         logger.warning(f"Selector timed out (180s) for {pine_file.name}")
@@ -554,7 +557,7 @@ def display_menu(registry: dict) -> tuple[str, dict]:
         """
     evaluated = {
         k: v for k, v in registry.items()
-        if v["status"] == "evaluated"
+        if v["status"] in ("evaluated", "failed")  # include failed strategies for retry
         and k not in _EXCLUDED_PINE_FILES
         and Path(v["file_path"]).exists()
     }
@@ -577,9 +580,10 @@ def display_menu(registry: dict) -> tuple[str, dict]:
         btc  = rec.get("btc_score", 0)
         proj = rec.get("project_score", 0)
         name = key.replace(".pine", "")[:39]
+        failed_tag = "  [RETRY]" if rec.get("status") == "failed" else ""
         print(
             f"  [{i}] {name:<40} "
-            f"{'*' * btc:>3} {'*' * proj:>4}  {_verdict(btc, proj)}"
+            f"{'*' * btc:>3} {'*' * proj:>4}  {_verdict(btc, proj)}{failed_tag}"
         )
     print(_div())
 
@@ -759,6 +763,8 @@ def run_orchestrator(
             process.wait()
         finally:
             watchdog.cancel()
+            if process.poll() is None:
+                process.terminate()
 
         if killed_by_watchdog.is_set():
             strat_logger.error("Orchestrator timed out after 900s.")
@@ -848,7 +854,7 @@ def archive_remaining(registry: dict, selected_key: str) -> dict:
     for key, rec in registry.items():
         if key == selected_key:
             continue
-        if rec["status"] not in ("new", "evaluated"):
+        if rec["status"] not in ("new", "evaluated", "failed"):
             continue
 
         total = rec.get("btc_score", 0) + rec.get("project_score", 0)
@@ -924,6 +930,11 @@ if __name__ == "__main__":
         print(f"\n  Conversion complete!")
         print(f"    Artifacts → {out_dir}")
     else:
+        registry[chosen_key].update({
+            "status":    "failed",
+            "failed_at": _now_iso(),
+        })
+        save_registry(registry)
         print(f"\n  Orchestrator failed. See: {run_dir / 'run.log'}")
         sys.exit(1)
 

@@ -44,8 +44,21 @@ When creating the PR via GitHub MCP, the body MUST follow this structured format
 - **Workaround:** [How the AI solved it].
 - **Note:** [Any warning for the human reviewer].
 
+### Validation Gate Summary
+| Check | Result |
+|---|---|
+| Lookahead Bias | PASS / FAIL |
+| min_bars guard (3× rule) | PASS / FAIL |
+| Forbidden functions scan | PASS / FAIL |
+| NaN warmup guard | PASS / FAIL |
+| No Fake State (position proxies) | PASS / FAIL |
+
 ### Test Results
 - [Status of the generated tests - e.g., "All 5 tests passed in the local sandbox"].
+
+### RL Feature Vector Notes
+- **Logic dropped at execution boundary:** [List any Pine exit logic or position-state conditions that were not converted]
+- **Cooldown / exit disclosures:** [Confirm whether cooldown was removed and execution-layer note was added]
 
 **Action Required:** Please perform a Code Review and approve for merge.
 ---
@@ -53,6 +66,10 @@ When creating the PR via GitHub MCP, the body MUST follow this structured format
 ## 4. Handover
 - Output the direct PR link.
 - **Explicit Message:** "The PR is ready. I have included a full 'Audit Trail' in the PR description to help you understand the conversion logic. Please perform a Code Review."
+- **CRITICAL — Output Token:** You MUST end your response with exactly one of:
+  - `INTEGRATION_PASS` — if the GitHub MCP PR was successfully created
+  - `INTEGRATION_FALLBACK` — if the GitHub MCP was unavailable and you provided manual paste instructions instead
+  The Orchestrator uses this token to determine the registry status.
 
 # Constraints
 - Do NOT merge.

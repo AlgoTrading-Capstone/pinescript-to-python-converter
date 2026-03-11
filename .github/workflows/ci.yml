@@ -1,40 +1,60 @@
-#name: Strategy Conversion CI
-#
-#on:
-#  pull_request:
-#    branches: [ main ]
-#    paths:
-#      - 'src/strategies/**'
-#      - 'tests/strategies/**'
-#  push:
-#    branches: [ main ]
-#
-#jobs:
-#  test-strategy:
-#    runs-on: ubuntu-latest
-#
-#    steps:
-#    - name: Checkout code
-#      uses: actions/checkout@v3
-#
-#    - name: Set up Python 3.11
-#      uses: actions/setup-python@v4
-#      with:
-#        python-version: "3.11"
-#
-#    - name: Install dependencies
-#      run: |
-#        python -m pip install --upgrade pip
-#        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-#        # Install TA-Lib C library from source
-#        wget https://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
-#        tar -xzf ta-lib-0.4.0-src.tar.gz
-#        cd ta-lib/
-#        ./configure --prefix=/usr
-#        make
-#        sudo make install
-#        pip install TA-Lib
-#
-#    - name: Run Tests with Pytest
-#      run: |
-#        pytest tests/strategies/ -v
+name: PR Strategy Tests
+
+# 1. TRIGGERS: Define exactly when this workflow should run
+on:
+  pull_request:
+    branches: [ main ]
+    # The 'paths' filter ensures the CI only runs if strategy files or tests were modified.
+    # This prevents wasting CI minutes on unrelated changes (e.g., editing a README).
+    paths:
+      - 'src/strategies/**'
+      - 'tests/**'
+      - 'requirements.txt'
+
+# 2. JOBS: Define the actual tasks the GitHub runner will execute
+jobs:
+  pytest:
+    # Spins up a fresh, empty Linux virtual machine in the cloud
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step A: Download the repository code into the runner
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # Step B: Install Python and enable pip caching.
+    # The cache pulls previously downloaded packages from memory, speeding up the CI by minutes.
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+
+    # Step C: Install dependencies, crucially handling the TA-Lib C library setup
+    - name: Install dependencies & TA-Lib
+      run: |
+        python -m pip install --upgrade pip
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+        
+        # TA-Lib requires its underlying C library to be compiled from source before the Python wrapper can be installed.
+        wget https://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+        tar -xzf ta-lib-0.4.0-src.tar.gz
+        cd ta-lib/
+        ./configure --prefix=/usr
+        make
+        sudo make install
+        
+        # Now that the C library is ready, install the Python package and the type-checker
+        pip install TA-Lib mypy
+
+    # Step D: Static Type Checking
+    # Runs Mypy to catch obvious type errors (e.g., passing strings instead of floats) before running the heavier tests.
+    - name: Type Checking with Mypy
+      run: |
+        mypy src/strategies/ --ignore-missing-imports
+
+    # Step E: Execution of the AI-generated tests
+    # Scans the test directory and strictly executes every V&V test created by the Test Generator Agent.
+    - name: Run Tests with Pytest
+      run: |
+        pytest tests/ -v
