@@ -11,8 +11,8 @@ Output ONLY a raw JSON object.
 - Start with `{`, end with `}` — nothing else.
 
 # Task
-You will receive a file path. Use your Read tool to read the PineScript file
-from disk. Then evaluate it according to the rubrics below.
+You will receive the full PineScript source code directly in the message.
+Evaluate it according to the rubrics below.
 
 # Output Schema
 {

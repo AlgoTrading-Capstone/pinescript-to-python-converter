@@ -362,25 +362,50 @@ class TradingViewScraper:
         """
         Click the copy button then read the Windows OS clipboard via PowerShell.
         Windows-only fallback.
+
+        Tries cp1252 encoding first (native Windows codepage, preserves accented
+        characters), then falls back to utf-8 with errors='replace' so it never
+        crashes on exotic bytes.
         """
         # Re-click copy so the content is fresh in the OS clipboard.
         if not self._click_copy_button():
             return None
         time.sleep(1)
 
+        cmd = ["powershell", "-command", "Get-Clipboard"]
+
+        # Pass 1: cp1252 — native Windows codepage, handles accented chars natively.
         try:
             result = subprocess.run(
-                ["powershell", "-command", "Get-Clipboard"],
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="cp1252",
+                timeout=10,
+            )
+            content = result.stdout.strip()
+            if content and len(content) > 10:
+                return content
+        except (UnicodeDecodeError, UnicodeError):
+            logger.debug("cp1252 clipboard decode failed, retrying with utf-8 replace")
+        except Exception as e:
+            logger.debug(f"PowerShell clipboard read (cp1252) failed: {e}")
+
+        # Pass 2: utf-8 with replacement — guaranteed not to crash.
+        try:
+            result = subprocess.run(
+                cmd,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                errors="replace",
                 timeout=10,
             )
             content = result.stdout.strip()
             if content and len(content) > 10:
                 return content
         except Exception as e:
-            logger.debug(f"PowerShell clipboard read failed: {e}")
+            logger.debug(f"PowerShell clipboard read (utf-8 replace) failed: {e}")
         return None
 
     def _extract_code_js(self) -> Optional[str]:

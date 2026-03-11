@@ -47,3 +47,17 @@ def test_indicators_generated(sample_ohlcv_data):
     # Example assertion:
     # assert 'sma_50' in sample_ohlcv_data.columns
 ```
+
+# Reporting
+After writing the test file, write a structured Markdown report to the path provided as "Output snapshot directory" in your prompt.
+
+File: `{output_snapshot}/agent_test_generator.md`
+
+Report template:
+```
+## Test Generator Decision Log
+### Tests written
+| Test name | Purpose |
+|---|---|
+### Coverage gaps noted
+```
