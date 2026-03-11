@@ -57,3 +57,17 @@ When creating the PR via GitHub MCP, the body MUST follow this structured format
 # Constraints
 - Do NOT merge.
 - If GitHub MCP is unavailable, provide the full Markdown text above for the user to paste manually into a PR.
+
+# Reporting
+After completing integration, write a structured Markdown report to the path provided as "Output snapshot directory" in your prompt.
+
+File: `{output_snapshot}/agent_integration.md`
+
+Report template:
+```
+## Integration Decision Log
+### Branch created
+### Files committed
+### PR URL
+### Audit trail summary
+```

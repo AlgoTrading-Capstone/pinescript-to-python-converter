@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import logging
+import threading
 from datetime import datetime, UTC
 from pathlib import Path
 
@@ -360,14 +361,17 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
     # Invoke the strategy_selector agent via the documented CLI flags:
     #   -p                         -> print (non-interactive) mode
     #   --agent strategy_selector   -> loads .claude/agents/strategy_selector.md
-    #   --dangerously-skip-permissions -> auto-approves all tool calls (Read, etc.)
-    #                                 without this the Read tool blocks forever
-    #                                 in a non-TTY subprocess
+    #   --dangerously-skip-permissions -> auto-approves all tool calls
     #   --no-session-persistence    -> don't write session files for throwaway evals
+    #
+    # File content is embedded directly in the prompt so the agent needs no
+    # Read tool call. This avoids tool-invocation hangs in non-TTY subprocesses.
     prompt = (
-        f"Read and evaluate the PineScript file at this exact path:\n"
-        f"{pine_file.resolve()}\n\n"
-        "Output the JSON object only."
+        f"Evaluate this PineScript strategy. File: {pine_file.name}\n\n"
+        f"{raw}\n\n"
+        "Output ONLY a raw JSON object matching this exact schema — no markdown, no extra fields:\n"
+        '{"pine_metadata": {"name": "...", "safe_name": "...", "timeframe": "...", "lookback_bars": 0}, '
+        '"btc_score": 0, "project_score": 0, "recommendation_reason": "..."}'
     )
     command = [
         "claude", "-p",
@@ -380,6 +384,7 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
     try:
         process = subprocess.Popen(
             command,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -394,17 +399,41 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
         return None
 
     collected: list[str] = []
+    killed_by_watchdog = threading.Event()
+
+    def _kill_on_timeout():
+        killed_by_watchdog.set()
+        try:
+            process.kill()
+        except OSError:
+            pass  # already exited
+
+    watchdog = threading.Timer(180, _kill_on_timeout)
     try:
+        watchdog.start()
         for line in process.stdout:
             stripped = line.rstrip()
             if stripped:
                 print(f"    {stripped}", flush=True)
                 logger.info(f"CLAUDE [SELECTOR]: {stripped}")
             collected.append(line)
-        process.wait(timeout=180)
-    except subprocess.TimeoutExpired:
+        process.wait()
+    except KeyboardInterrupt:
         process.kill()
-        logger.warning(f"Selector timed out for {pine_file.name}")
+        raise
+    except Exception:
+        # Process was killed by watchdog or other error
+        try:
+            process.kill()
+        except OSError:
+            pass
+        process.wait()
+    finally:
+        watchdog.cancel()
+
+    if killed_by_watchdog.is_set():
+        logger.warning(f"Selector timed out (180s) for {pine_file.name}")
+        print("TIMED OUT", flush=True)
         return None
 
     full_output = "".join(collected)
@@ -462,10 +491,21 @@ def run_evaluations(registry: dict) -> dict:
         if result and required.issubset(result):
             btc  = result["btc_score"]
             proj = result["project_score"]
+            meta = result["pine_metadata"]
+            # Ensure required sub-fields exist — generate them if the agent omitted them.
+            if not meta.get("safe_name"):
+                raw_name = meta.get("name", key.replace(".pine", ""))
+                meta["safe_name"] = "".join(
+                    c if c.isalnum() else "_" for c in raw_name
+                ).strip("_")
+            if not meta.get("timeframe"):
+                meta["timeframe"] = "1h"
+            if not meta.get("lookback_bars"):
+                meta["lookback_bars"] = 100
             registry[key].update({
                 "status":                "evaluated",
                 "evaluated_at":          _now_iso(),
-                "pine_metadata":         result["pine_metadata"],
+                "pine_metadata":         meta,
                 "btc_score":             btc,
                 "project_score":         proj,
                 "recommendation_reason": result.get("recommendation_reason", ""),
@@ -664,6 +704,7 @@ def run_orchestrator(
     try:
         process = subprocess.Popen(
             command,
+            stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -673,31 +714,56 @@ def run_orchestrator(
             env=_SUBPROCESS_ENV,
         )
         current_agent = "ORCHESTRATOR"
+        killed_by_watchdog = threading.Event()
 
-        for line in process.stdout:
-            stripped = line.rstrip()
-            if not stripped:
-                continue
+        def _kill_on_timeout():
+            killed_by_watchdog.set()
+            try:
+                process.kill()
+            except OSError:
+                pass  # already exited
 
+        watchdog = threading.Timer(900, _kill_on_timeout)
+        try:
+            watchdog.start()
+            for line in process.stdout:
+                stripped = line.rstrip()
+                if not stripped:
+                    continue
 
-            lower_line = stripped.lower()
-            if "handing over to: transpiler" in lower_line or "agent transpiler" in lower_line:
-                current_agent = "TRANSPILER"
-            elif "handing over to: validator" in lower_line or "agent validator" in lower_line:
-                current_agent = "VALIDATOR"
-            elif "handing over to: test_generator" in lower_line or "agent test_generator" in lower_line:
-                current_agent = "QA_AGENT"
-            elif "handing over to: integration" in lower_line or "agent integration" in lower_line:
-                current_agent = "INTEGRATION"
-            elif "control returned to: orchestrator" in lower_line:
-                current_agent = "ORCHESTRATOR"
+                lower_line = stripped.lower()
+                if "handing over to: transpiler" in lower_line or "agent transpiler" in lower_line:
+                    current_agent = "TRANSPILER"
+                elif "handing over to: validator" in lower_line or "agent validator" in lower_line:
+                    current_agent = "VALIDATOR"
+                elif "handing over to: test_generator" in lower_line or "agent test_generator" in lower_line:
+                    current_agent = "QA_AGENT"
+                elif "handing over to: integration" in lower_line or "agent integration" in lower_line:
+                    current_agent = "INTEGRATION"
+                elif "control returned to: orchestrator" in lower_line:
+                    current_agent = "ORCHESTRATOR"
 
+                print(f"  [{current_agent}] {stripped}", flush=True)
+                strat_logger.info(f"[{current_agent}] {stripped}")
 
-            print(f"  [{current_agent}] {stripped}", flush=True)
+            process.wait()
+        except KeyboardInterrupt:
+            process.kill()
+            raise
+        except Exception:
+            # Process was killed by watchdog or other error
+            try:
+                process.kill()
+            except OSError:
+                pass
+            process.wait()
+        finally:
+            watchdog.cancel()
 
-            strat_logger.info(f"[{current_agent}] {stripped}")
-
-        process.wait(timeout=900) # 15 minutes-hard cap
+        if killed_by_watchdog.is_set():
+            strat_logger.error("Orchestrator timed out after 900s.")
+            print("\n    Orchestrator timed out (15 min).", flush=True)
+            return False, run_dir
 
         if process.returncode == 0:
             strat_logger.info("Orchestrator completed successfully.")
@@ -705,11 +771,6 @@ def run_orchestrator(
         strat_logger.error(f"Orchestrator exited with code {process.returncode}")
         return False, run_dir
 
-    except subprocess.TimeoutExpired:
-        process.kill()
-        strat_logger.error("Orchestrator timed out after 900s.")
-        print("\n    Orchestrator timed out (15 min).", flush=True)
-        return False, run_dir
     except FileNotFoundError:
         strat_logger.error("'claude' command not found.")
         print("\n    'claude' CLI not found. Is Claude Code installed and in PATH?")
@@ -844,9 +905,10 @@ if __name__ == "__main__":
     save_registry(registry)
 
     # Step 4 — Transpile
-    meta    = chosen_rec["pine_metadata"]
-    ts      = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S")
-    out_dir = OUTPUT_DIR / meta["safe_name"] / ts
+    meta      = chosen_rec["pine_metadata"]
+    ts        = datetime.now(UTC).strftime("%Y-%m-%d_%H-%M-%S")
+    safe_name = meta.get("safe_name") or chosen_key.replace(".pine", "")
+    out_dir   = OUTPUT_DIR / safe_name / ts
     out_dir.mkdir(parents=True, exist_ok=True)
 
     success, run_dir = run_orchestrator(Path(chosen_rec["file_path"]), meta, out_dir)

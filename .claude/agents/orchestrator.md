@@ -27,6 +27,11 @@ Delegate tasks to the appropriate specialist agents:
    - When calling the **Validator**, explicitly point it to the file created by the Transpiler.
    - When calling the **Test Generator**, point it to the strategy file that just passed validation.
    - When calling the **Integration Agent**, provide the paths to BOTH the strategy file and the test file.
+   - When calling **ANY sub-agent**, always include the output snapshot directory path in the prompt:
+     ```
+     Output snapshot directory: <output_snapshot>
+     After completing your task, write your full decision log to: <output_snapshot>/agent_<yourname>.md
+     ```
 
 3. **Error Handling (Fail-Fast):**
    - If ANY agent reports a FAILURE or ERROR:
