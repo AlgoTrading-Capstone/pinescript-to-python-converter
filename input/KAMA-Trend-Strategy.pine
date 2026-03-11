@@ -1,0 +1,106 @@
+//@version=6
+// ÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍ
+//  KAMA Adaptive Trend Strategy
+//  Uses dual Kaufman Adaptive Moving Averages for signal generation.
+//  Fast KAMA x Slow KAMA crossover + slope filter for high-quality entries.
+// ÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍÍ
+strategy("KAMA Trend Strategy", "KAMA Strat", overlay=true, default_qty_type=strategy.percent_of_equity, default_qty_value=100, commission_type=strategy.commission.percent, commission_value=0.05, slippage=1, initial_capital=10000)
+
+import TradingView/ta/11 as TVta
+
+// ÄÄÄ INPUTS ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+var GRP1 = "?? KAMA Settings"
+float src      = input.source(close, "Source",         group=GRP1)
+int   erLen    = input.int(10,       "ER Length",      group=GRP1, minval=1)
+int   fastLen  = input.int(2,        "Fast Length",    group=GRP1, minval=1)
+int   slowFast = input.int(10,       "Slow KAMA Fast", group=GRP1, minval=1)
+int   slowSlow = input.int(30,       "Slow KAMA Slow", group=GRP1, minval=1)
+
+var GRP2 = "??? Risk Management"
+bool  useATRStop = input.bool(true,   "ATR-Based Stop Loss",  group=GRP2)
+float atrMult    = input.float(2.0,   "ATR Stop Multiplier",  group=GRP2, minval=0.1, step=0.1)
+float atrTpMult  = input.float(3.0,   "ATR Take Profit Mult", group=GRP2, minval=0.1, step=0.1)
+int   atrLen     = input.int(14,      "ATR Length",           group=GRP2, minval=1)
+
+var GRP3 = "?? Display"
+bool  showFill    = input.bool(true, "Show Background Fill", group=GRP3)
+bool  showSignals = input.bool(true, "Show Entry Signals",   group=GRP3)
+bool  showSlTp    = input.bool(true, "Show SL / TP Lines",   group=GRP3)
+
+// ÄÄÄ CALCULATIONS ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+float kamaFast = TVta.kama(src, erLen, fastLen, 10)
+float kamaSlow = TVta.kama(src, erLen, slowFast, slowSlow)
+
+bool  kamaFastUp = kamaFast > kamaFast[1]
+bool  kamaSlowUp = kamaSlow > kamaSlow[1]
+
+bool  bullCross = ta.crossover(kamaFast, kamaSlow)
+bool  bearCross = ta.crossunder(kamaFast, kamaSlow)
+
+float atr = ta.atr(atrLen)
+
+// ÄÄÄ STRATEGY LOGIC ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+bool  longEntry  = bullCross and kamaSlowUp
+bool  shortEntry = bearCross and not kamaSlowUp
+
+var float longSL  = na
+var float longTP  = na
+var float shortSL = na
+var float shortTP = na
+
+if longEntry
+    longSL := useATRStop ? close - atr * atrMult  : ta.lowest(low, 5)
+    longTP := useATRStop ? close + atr * atrTpMult : close + (close - longSL) * (atrTpMult / atrMult)
+
+if shortEntry
+    shortSL := useATRStop ? close + atr * atrMult  : ta.highest(high, 5)
+    shortTP := useATRStop ? close - atr * atrTpMult : close - (shortSL - close) * (atrTpMult / atrMult)
+
+if longEntry
+    strategy.entry("Long", strategy.long)
+if shortEntry
+    strategy.entry("Short", strategy.short)
+
+if strategy.position_size > 0
+    strategy.exit("Long Exit",  "Long",  stop=longSL,  limit=longTP)
+if strategy.position_size < 0
+    strategy.exit("Short Exit", "Short", stop=shortSL, limit=shortTP)
+
+// ÄÄÄ VISUALS ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+color bullColor = color.new(#00D4AA, 0)
+color bearColor = color.new(#FF6B6B, 0)
+color bullFill  = color.new(#00D4AA, 88)
+color bearFill  = color.new(#FF6B6B, 88)
+
+bool isBull = kamaFast >= kamaSlow
+plot(kamaFast, "KAMA Fast", color=isBull ? bullColor : bearColor, linewidth=2)
+plot(kamaSlow, "KAMA Slow", color=color.new(isBull ? bullColor : bearColor, 50), linewidth=1, style=plot.style_circles)
+
+p1 = plot(kamaFast, display=display.none)
+p2 = plot(kamaSlow, display=display.none)
+fill(p1, p2, color=showFill ? (isBull ? bullFill : bearFill) : na, title="KAMA Fill")
+
+bool inLong  = strategy.position_size > 0
+bool inShort = strategy.position_size < 0
+
+plot(showSlTp and inLong  ? longSL  : na, "Long SL",  color=color.new(bearColor, 30), style=plot.style_linebr, linewidth=1)
+plot(showSlTp and inLong  ? longTP  : na, "Long TP",  color=color.new(bullColor, 30), style=plot.style_linebr, linewidth=1)
+plot(showSlTp and inShort ? shortSL : na, "Short SL", color=color.new(bearColor, 30), style=plot.style_linebr, linewidth=1)
+plot(showSlTp and inShort ? shortTP : na, "Short TP", color=color.new(bullColor, 30), style=plot.style_linebr, linewidth=1)
+
+// ÄÄÄ INFO TABLE ÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ
+var table infoBox = table.new(position.top_right, 2, 5, bgcolor=color.new(#0D1117, 10), border_color=color.new(#30363D, 80), border_width=1, frame_color=color.new(#30363D, 60), frame_width=1)
+
+if barstate.islast
+    string trendLabel = isBull ? " BULLISH" : " BEARISH"
+    color  trendColor = isBull ? bullColor   : bearColor
+    table.cell(infoBox, 0, 0, "KAMA STRATEGY", text_color=color.new(#8B949E, 0), text_size=size.small, bgcolor=color.new(#161B22, 10))
+    table.cell(infoBox, 1, 0, "",              bgcolor=color.new(#161B22, 10))
+    table.cell(infoBox, 0, 1, "Trend",         text_color=color.new(#8B949E, 0), text_size=size.small, bgcolor=color.new(#0D1117, 10))
+    table.cell(infoBox, 1, 1, trendLabel,      text_color=trendColor,            text_size=size.small, bgcolor=color.new(#0D1117, 10))
+    table.cell(infoBox, 0, 2, "KAMA Fast",     text_color=color.new(#8B949E, 0), text_size=size.small, bgcolor=color.new(#161B22, 10))
+    table.cell(infoBox, 1, 2, str.tostring(kamaFast, format.mintick), text_color=bullColor, text_size=size.small, bgcolor=color.new(#161B22, 10))
+    table.cell(infoBox, 0, 3, "KAMA Slow",     text_color=color.new(#8B949E, 0), text_size=size.small, bgcolor=color.new(#0D1117, 10))
+    table.cell(infoBox, 1, 3, str.tostring(kamaSlow, format.mintick), text_color=bearColor, text_size=size.small, bgcolor=color.new(#0D1117, 10))
+    table.cell(infoBox, 0, 4, "ATR",           text_color=color.new(#8B949E, 0), text_size=size.small, bgcolor=color.new(#161B22, 10))
+    table.cell(infoBox, 1, 4, str.tostring(atr, format.mintick),      text_color=color.new(#E6EDF3, 0), text_size=size.small, bgcolor=color.new(#161B22, 10))
