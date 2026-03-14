@@ -56,32 +56,28 @@ def _trending_close(n: int, start: float, end: float, noise_std: float = 5.0) ->
 
 def _bullish_crossover_df(n: int = 300) -> pd.DataFrame:
     """
-    Build a DataFrame that reliably forces a KAMA fast-over-slow crossover on
-    the last bar in bullish conditions.
+    Flat base → single dip → single spike forces fast KAMA below then above slow
+    KAMA on the last two bars, with slow KAMA rising.
 
-    Strategy:
-      - n-er_len-50 bars: flat/sideways (KAMA fast ≈ KAMA slow, both stable)
-      - Last 50 bars: strong upward surge (fast KAMA reacts faster and crosses above slow)
+    After n-2 flat bars both KAMAs converge to base. The dip on bar n-2 drops fast
+    KAMA ~134 pts (sc≈0.445) vs slow KAMA ~10 pts (sc≈0.033), so fast < slow.
+    The spike on bar n-1 surges fast KAMA ~2,284 pts above its prior position while
+    slow barely moves — guaranteeing fast > slow and slow rising.
     """
-    n_flat = n - 50
-    flat = np.full(n_flat, 10_000.0)
-    # Surge forces fast KAMA (more responsive) above slow KAMA
-    surge = np.linspace(10_000.0, 12_000.0, 50)
-    close = np.concatenate([flat, surge])
-    # Inject a final spike to guarantee crossover on the very last bar
-    close[-2] = close[-3] - 300.0  # fast dips below slow
-    close[-1] = close[-3] + 300.0  # fast surges above slow
+    base = 10_000.0
+    flat = np.full(n - 2, base)
+    close = np.concatenate([flat, [base - 300.0, base + 5_000.0]])
     return _make_ohlcv(close)
 
 
 def _bearish_crossover_df(n: int = 300) -> pd.DataFrame:
-    """Mirror of _bullish_crossover_df for a fast-under-slow crossover."""
-    n_flat = n - 50
-    flat = np.full(n_flat, 10_000.0)
-    drop = np.linspace(10_000.0, 8_000.0, 50)
-    close = np.concatenate([flat, drop])
-    close[-2] = close[-3] + 300.0  # fast rises above slow
-    close[-1] = close[-3] - 300.0  # fast drops below slow
+    """
+    Flat base → single spike → single crash forces fast KAMA above then below slow
+    KAMA on the last two bars, with slow KAMA falling.
+    """
+    base = 10_000.0
+    flat = np.full(n - 2, base)
+    close = np.concatenate([flat, [base + 300.0, base - 5_000.0]])
     return _make_ohlcv(close)
 
 
