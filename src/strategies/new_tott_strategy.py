@@ -38,9 +38,11 @@ def _compute_var_ma(src: pd.Series, length: int) -> np.ndarray:
     n = len(src)
     src_arr = src.to_numpy(dtype=float)
 
-    diff = pd.Series(src_arr).diff()        # NaN at index 0, backward-looking elsewhere
-    vud1 = diff.clip(lower=0).fillna(0.0).to_numpy()
-    vdd1 = (-diff).clip(lower=0).fillna(0.0).to_numpy()
+    vud1 = np.where(src_arr > np.roll(src_arr, 1), src_arr - np.roll(src_arr, 1), 0.0)
+    vdd1 = np.where(src_arr < np.roll(src_arr, 1), np.roll(src_arr, 1) - src_arr, 0.0)
+    # First element has no valid predecessor — zero it out
+    vud1[0] = 0.0
+    vdd1[0] = 0.0
 
     # Rolling 9-bar sums (forward-safe; only looks back)
     vud_series = pd.Series(vud1).rolling(9).sum().to_numpy()

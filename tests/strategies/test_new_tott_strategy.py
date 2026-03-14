@@ -61,7 +61,7 @@ class TestNewTottStrategy:
     def test_signal_in_bull_phase(self, sample_ohlcv_data):
         """Strategy must be in a bullish state at the end of the bull run (bars 700-900).
 
-        The fixture's Phase 2 is a strong uptrend (10,000 -> 12,000). The OTT
+        The fixture's Phase 2 is a strong uptrend (10,000 → 12,000). The OTT
         strategy is a slow trend-follower: once it crosses into bullish territory
         it stays there throughout the uptrend. We verify two things:
 
@@ -115,7 +115,7 @@ class TestNewTottStrategy:
     def test_signal_in_bear_phase(self, sample_ohlcv_data):
         """At least one SHORT signal must be emitted during the bear crash (bars 900-1100).
 
-        The fixture's Phase 3 is a strong downtrend (12,000 -> 9,000). The OTT
+        The fixture's Phase 3 is a strong downtrend (12,000 → 9,000). The OTT
         strategy should catch at least one crossunder of MAvg below OTTdn.
         """
         strategy = NewTottStrategy()

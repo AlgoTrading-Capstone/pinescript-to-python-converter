@@ -25,7 +25,7 @@ pytest tests/strategies/test_<name>.py -v
 pytest tests/integrations/ -v
 ```
 
-**Dependencies:** TA-Lib requires the C library to be installed separately before `pip install -r requirements.txt`. On Windows use a pre-built wheel; on Linux build from source (see `ci.yml` for the build steps).
+**Dependencies:** TA-Lib requires the C library to be installed separately before `pip install -r requirements.txt`. On Windows use a pre-built wheel; on Linux build from source (see `ci.yml` for the build steps). `ccxt` is also required — it is used in `src/utils/timeframes.py` for candle boundary alignment (`ccxt.Exchange.round_timeframe`).
 
 ## Pipeline Flow
 
@@ -129,9 +129,18 @@ All generated strategy tests must use this fixture. The warmup phase ensures `mi
 | `.claude/agents/` | Agent persona definitions |
 | `.github/workflows/ci.yml` | CI pipeline definition — fully commented out (disabled), runs `pytest tests/strategies/` |
 
+## Runtime Directories
+
+| Directory | Purpose |
+|---|---|
+| `output/<safe_name>/<timestamp>/` | Per-run conversion snapshot: `strategy.py`, `test_strategy.py`, `run.log`, agent decision logs |
+| `logs/<strategy_name>/<timestamp>/` | Orchestrator process logs: `run.log` (DEBUG) and `errors.log` (ERROR only) |
+| `archive/` | Low-scoring `.pine` files moved here after a run (combined score < 4) |
+| `seen_urls.json` | Persisted set of scraped TradingView URLs — prevents re-downloading across runs |
+
 ## Agent Decision Logs (Output Snapshot)
 
-Each conversion run produces a per-run snapshot directory (passed by `runner.py` to the orchestrator). Each sub-agent writes a Markdown decision log there:
+Each conversion run writes agent decision logs to `output/<safe_name>/<timestamp>/`:
 
 - `agent_transpiler.md` — mapping table, warnings, files written
 - `agent_validator.md` — checklist results

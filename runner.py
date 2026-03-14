@@ -955,10 +955,24 @@ if __name__ == "__main__":
 
     if success:
         copy_artifacts(meta, out_dir, run_dir)
+
+        # Post-conversion cleanup: move .pine out of input/ so it no longer
+        # counts toward the scraper threshold on subsequent runs.
+        ARCHIVE_DIR.mkdir(exist_ok=True)
+        pine_src = Path(chosen_rec["file_path"])
+        new_file_path = str(pine_src)
+        if pine_src.exists():
+            pine_dest = ARCHIVE_DIR / pine_src.name
+            shutil.move(str(pine_src), pine_dest)
+            new_file_path = str(pine_dest)
+
+        # Single, atomic registry update
         registry[chosen_key].update({
-            "status":       "converted",
+            "status":       "completed",
             "converted_at": _now_iso(),
+            "archived_at":  _now_iso(),
             "output_dir":   str(out_dir),
+            "file_path":    new_file_path,
         })
         save_registry(registry)
         print(f"\n  Conversion complete!")
