@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 
-from src.strategies.rudy_breakout_momentum_v2 import RudyBreakoutMomentumV2Strategy
+from src.strategies.rudy_breakout_momentum_v2_strategy import RudyBreakoutMomentumV2Strategy
 from src.base_strategy import StrategyRecommendation, SignalType
 
 
