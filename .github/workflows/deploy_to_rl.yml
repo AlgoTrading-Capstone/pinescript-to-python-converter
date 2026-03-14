@@ -7,12 +7,21 @@ on:
   pull_request:
     types: [closed]
     branches: [main]
+  # Manual trigger — set all_strategies: true to backfill every strategy
+  # currently in src/strategies/ rather than just the PR diff.
+  workflow_dispatch:
+    inputs:
+      all_strategies:
+        description: "Deploy ALL strategies (backfill), not just new ones"
+        required: false
+        default: "false"
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # Only run when the PR was genuinely merged, not just closed.
-    if: github.event.pull_request.merged == true
+    # For PR events: only run on genuine merges.
+    # For manual dispatch: always run.
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
 
     steps:
     # Step 1: Checkout the converter repository (this repo) so we can
@@ -32,15 +41,22 @@ jobs:
         token: ${{ secrets.RL_TRAINING_PAT }}
         path: rl-repo
 
-    # Step 3: Identify any NEW *_strategy.py files added by this PR.
-    # --diff-filter=A restricts to files that were Added (not modified/deleted).
-    # Result is stored in NEW_FILES and exported for the steps that follow.
+    # Step 3: Identify strategy files to deploy.
+    # - PR trigger:           only files Added in this PR (--diff-filter=A).
+    # - workflow_dispatch
+    #   all_strategies=true:  every *_strategy.py in src/strategies/ (backfill).
+    #   all_strategies=false: same PR-diff behaviour as above.
     - name: Identify new strategy files
       id: detect
       run: |
-        NEW_FILES=$(git diff --name-only --diff-filter=A \
-          "${{ github.event.pull_request.base.sha }}" HEAD \
-          -- 'src/strategies/*_strategy.py')
+        if [ "${{ github.event.inputs.all_strategies }}" = "true" ]; then
+          echo "Backfill mode: collecting all strategy files in src/strategies/"
+          NEW_FILES=$(find src/strategies -maxdepth 1 -name '*_strategy.py' | sort)
+        else
+          NEW_FILES=$(git diff --name-only --diff-filter=A \
+            "${{ github.event.pull_request.base.sha }}" HEAD \
+            -- 'src/strategies/*_strategy.py')
+        fi
         echo "new_files<<EOF" >> "$GITHUB_OUTPUT"
         echo "$NEW_FILES" >> "$GITHUB_OUTPUT"
         echo "EOF" >> "$GITHUB_OUTPUT"
@@ -48,7 +64,7 @@ jobs:
           echo "No new strategy files detected. Skipping deployment."
           echo "skip=true" >> "$GITHUB_OUTPUT"
         else
-          echo "New files detected:"
+          echo "Files to deploy:"
           echo "$NEW_FILES"
           echo "skip=false" >> "$GITHUB_OUTPUT"
         fi
@@ -200,5 +216,5 @@ jobs:
           echo "Nothing to commit. All strategies already present in rl-training."
           exit 0
         fi
-        git commit -m "auto-deploy: add strategies from PR #${{ github.event.pull_request.number }} (${{ github.event.pull_request.title }})"
+        git commit -m "auto-deploy: add strategies from ${{ github.event_name == 'workflow_dispatch' && 'manual backfill' || format('PR #{0} ({1})', github.event.pull_request.number, github.event.pull_request.title) }}"
         git push
