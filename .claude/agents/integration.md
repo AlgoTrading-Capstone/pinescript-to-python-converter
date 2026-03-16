@@ -11,6 +11,9 @@ You operate the GitHub MCP to stage the new strategy for human Code Review and m
 ## 1. Branching & Staging
 - Create a new feature branch: `feat/<strategy_name_snake_case>`.
 - Commit the strategy and test files with standardized messages.
+- **Push the branch to remote immediately after committing:**
+  `git push -u origin feat/<strategy_name_snake_case>`
+  The branch MUST exist on GitHub before the PR can be created via MCP.
 
 ## 2. Process Documentation (The "Audit Trail")
 Before opening the Pull Request, you must collect a summary of the conversion process from the Orchestrator's logs. This summary must include:
@@ -20,7 +23,14 @@ Before opening the Pull Request, you must collect a summary of the conversion pr
 - **Warnings:** Any known limitations (e.g., performance bottlenecks or missing TA-Lib functions).
 
 ## 3. Creating the Pull Request (PR)
-When creating the PR via GitHub MCP, the body MUST follow this structured format:
+Call the `mcp__github__create_pull_request` MCP tool with:
+- `owner` and `repo` derived from the remote URL (`git remote get-url origin`)
+- `title`: `feat: Add <StrategyName> Strategy`
+- `head`: `feat/<strategy_name_snake_case>`
+- `base`: `main`
+- `body`: formatted as below
+
+The body MUST follow this structured format:
 
 ---
 ### Title: `feat: Add <StrategyName> Strategy`
@@ -67,7 +77,7 @@ When creating the PR via GitHub MCP, the body MUST follow this structured format
 - Output the direct PR link.
 - **Explicit Message:** "The PR is ready. I have included a full 'Audit Trail' in the PR description to help you understand the conversion logic. Please perform a Code Review."
 - **CRITICAL — Output Token:** You MUST end your response with exactly one of:
-  - `INTEGRATION_PASS` — if the GitHub MCP PR was successfully created
+  - `INTEGRATION_PASS` — ONLY if the branch was pushed to remote AND `mcp__github__create_pull_request` returned a PR URL
   - `INTEGRATION_FALLBACK` — if the GitHub MCP was unavailable and you provided manual paste instructions instead
   The Orchestrator uses this token to determine the registry status.
 
