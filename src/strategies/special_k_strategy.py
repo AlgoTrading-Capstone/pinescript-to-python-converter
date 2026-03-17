@@ -103,8 +103,6 @@ class SpecialKStrategy(BaseStrategy):
     + 100 (signal SMA) = 1160. We use 1160 as the conservative min_bars guard.
     """
 
-    MIN_BARS: int = 1160
-
     def __init__(
         self,
         len1: int = 100,
@@ -118,13 +116,15 @@ class SpecialKStrategy(BaseStrategy):
                 "Martin Pring's Special K momentum strategy using weighted smoothed "
                 "ROC components across 15 time horizons with zero-line and slope filters"
             ),
-            timeframe="1D",
+            timeframe="1d",
             lookback_hours=19776,
         )
         self.len1 = len1
         self.use_zero_filter = use_zero_filter
         self.use_slope_filter = use_slope_filter
         self.slope_len = slope_len
+        # Longest ROC period (530) + longest SMA period (530) + signal SMA (len1)
+        self.MIN_CANDLES_REQUIRED = 1060 + self.len1
 
     def run(self, df: pd.DataFrame, timestamp: datetime) -> StrategyRecommendation:
         """Evaluate the Special K Strategy for the current bar.
@@ -139,7 +139,7 @@ class SpecialKStrategy(BaseStrategy):
         -------
         StrategyRecommendation with LONG, SHORT, FLAT, or HOLD signal.
         """
-        if len(df) < self.MIN_BARS:
+        if len(df) < self.MIN_CANDLES_REQUIRED:
             return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
 
         src = df["close"].reset_index(drop=True)

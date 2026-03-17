@@ -38,11 +38,9 @@ def _compute_var_ma(src: pd.Series, length: int) -> np.ndarray:
     n = len(src)
     src_arr = src.to_numpy(dtype=float)
 
-    vud1 = np.where(src_arr > np.roll(src_arr, 1), src_arr - np.roll(src_arr, 1), 0.0)
-    vdd1 = np.where(src_arr < np.roll(src_arr, 1), np.roll(src_arr, 1) - src_arr, 0.0)
-    # First element has no valid predecessor — zero it out
-    vud1[0] = 0.0
-    vdd1[0] = 0.0
+    diff = pd.Series(src_arr).diff()        # NaN at index 0, backward-looking elsewhere
+    vud1 = diff.clip(lower=0).fillna(0.0).to_numpy()
+    vdd1 = (-diff).clip(lower=0).fillna(0.0).to_numpy()
 
     # Rolling 9-bar sums (forward-safe; only looks back)
     vud_series = pd.Series(vud1).rolling(9).sum().to_numpy()
@@ -126,10 +124,6 @@ class NewTottStrategy(BaseStrategy):
     execution layer.
     """
 
-    # Minimum candles required before the first meaningful signal can be emitted.
-    # VAR MA needs ~40 bars to stabilise; the rolling-9 sum needs 9 more.
-    MIN_BARS: int = 50
-
     def __init__(
         self,
         length: int = 40,
@@ -148,6 +142,8 @@ class NewTottStrategy(BaseStrategy):
         self.length = length
         self.percent = percent
         self.coeff = coeff
+        # VAR MA needs ~length bars to stabilise; 10-bar rolling sum needs 10 more
+        self.MIN_CANDLES_REQUIRED = self.length + 10
 
     def run(self, df: pd.DataFrame, timestamp: datetime) -> StrategyRecommendation:
         """Evaluate the strategy for the current bar.
@@ -162,7 +158,7 @@ class NewTottStrategy(BaseStrategy):
         -------
         StrategyRecommendation with LONG, SHORT, or HOLD signal.
         """
-        if len(df) < self.MIN_BARS:
+        if len(df) < self.MIN_CANDLES_REQUIRED:
             return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
 
         src = df["close"].reset_index(drop=True)

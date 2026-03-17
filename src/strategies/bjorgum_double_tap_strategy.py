@@ -61,10 +61,6 @@ class BjorgumDoubleTapStrategy(BaseStrategy):
     6. Otherwise emit HOLD.
     """
 
-    # Minimum candles before signals can be evaluated.
-    # Needs len (50) for pivot detection + ATR (14) warm-up + several extra pivots.
-    MIN_BARS: int = 120
-
     def __init__(
         self,
         len_: int = 50,
@@ -88,6 +84,8 @@ class BjorgumDoubleTapStrategy(BaseStrategy):
         self.fib = fib
         self.atr_len = atr_len
         self.swing_lookback = swing_lookback
+        # 2 full pivot-lookback windows + ATR warmup + swing buffer
+        self.MIN_CANDLES_REQUIRED = 2 * self.len_ + self.atr_len + self.swing_lookback + 1
         # Tracks the bar index of p3 (neckline pivot) for the last traded pattern.
         # Mirrors Pine Script's `traded` flag to prevent re-signaling the same structure.
         self._last_traded_p3_idx: int = -1
@@ -210,7 +208,7 @@ class BjorgumDoubleTapStrategy(BaseStrategy):
         -------
         StrategyRecommendation with LONG, SHORT, or HOLD signal.
         """
-        if len(df) < self.MIN_BARS:
+        if len(df) < self.MIN_CANDLES_REQUIRED:
             return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
 
         df = df.reset_index(drop=True)
