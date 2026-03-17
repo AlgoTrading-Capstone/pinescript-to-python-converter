@@ -108,14 +108,14 @@ class TestRudyBreakoutMomentumV2Strategy:
         assert strategy.name == "Rudy Breakout Momentum v2", (
             f"Unexpected strategy name: {strategy.name!r}"
         )
-        assert strategy.timeframe == "1D", (
-            f"Expected timeframe '1D', got {strategy.timeframe!r}"
+        assert strategy.timeframe == "1d", (
+            f"Expected timeframe '1d', got {strategy.timeframe!r}"
         )
         assert strategy.lookback_hours == 3024, (
             f"Expected lookback_hours=3024, got {strategy.lookback_hours}"
         )
-        assert strategy.MIN_BARS == 160, (
-            f"Expected MIN_BARS=160, got {strategy.MIN_BARS}"
+        assert strategy.MIN_CANDLES_REQUIRED == 160, (
+            f"Expected MIN_CANDLES_REQUIRED=160, got {strategy.MIN_CANDLES_REQUIRED}"
         )
 
     def test_custom_parameters(self):
@@ -145,7 +145,7 @@ class TestRudyBreakoutMomentumV2Strategy:
     def test_hold_on_insufficient_data(self, sample_ohlcv_data):
         """Strategy must return HOLD with exactly MIN_BARS - 1 (159) rows."""
         strategy = RudyBreakoutMomentumV2Strategy()
-        min_bars = strategy.MIN_BARS  # 160
+        min_bars = strategy.MIN_CANDLES_REQUIRED  # 160
         too_few = sample_ohlcv_data.iloc[: min_bars - 1].copy()
 
         result = strategy.run(too_few, _FIXED_TS)
@@ -162,7 +162,7 @@ class TestRudyBreakoutMomentumV2Strategy:
         not raise an exception.
         """
         strategy = RudyBreakoutMomentumV2Strategy()
-        min_bars = strategy.MIN_BARS  # 160
+        min_bars = strategy.MIN_CANDLES_REQUIRED  # 160
         df_exact = sample_ohlcv_data.iloc[:min_bars].copy()
 
         result = strategy.run(df_exact, _FIXED_TS)
@@ -378,10 +378,10 @@ class TestRudyBreakoutMomentumV2Strategy:
         """
         strategy = RudyBreakoutMomentumV2Strategy()
 
-        for end_idx in range(1, strategy.MIN_BARS):
+        for end_idx in range(1, strategy.MIN_CANDLES_REQUIRED):
             result = _run_at(strategy, sample_ohlcv_data, end_idx)
             assert result.signal == SignalType.HOLD, (
-                f"Expected HOLD at row {end_idx} (< MIN_BARS={strategy.MIN_BARS}), "
+                f"Expected HOLD at row {end_idx} (< MIN_BARS={strategy.MIN_CANDLES_REQUIRED}), "
                 f"got {result.signal}"
             )
 

@@ -41,7 +41,7 @@ def test_import():
 def test_min_bars_guard_returns_hold():
     """Returns HOLD when fewer than MIN_BARS candles are provided."""
     strategy = BjorgumDoubleTapStrategy()
-    min_bars = strategy.MIN_BARS
+    min_bars = strategy.MIN_CANDLES_REQUIRED
 
     # Create a minimal OHLCV DataFrame with one row fewer than MIN_BARS
     n = min_bars - 1
@@ -140,7 +140,7 @@ def test_bulk_run_produces_signals(sample_ohlcv_data):
 
     # Run only for the full dataset (faster — no rolling slice)
     all_signals = []
-    for i in range(strategy.MIN_BARS, len(df) + 1):
+    for i in range(strategy.MIN_CANDLES_REQUIRED, len(df) + 1):
         slice_df = df.iloc[:i].copy()
         ts = slice_df["date"].iloc[-1].to_pydatetime()
         rec = strategy.run(slice_df, ts)
@@ -154,7 +154,7 @@ def test_bulk_run_produces_signals(sample_ohlcv_data):
     # Log signal distribution (useful during debugging)
     from collections import Counter
     counts = Counter(all_signals)
-    print(f"\nSignal distribution (bars {strategy.MIN_BARS}–{len(df)}): {dict(counts)}")
+    print(f"\nSignal distribution (bars {strategy.MIN_CANDLES_REQUIRED}–{len(df)}): {dict(counts)}")
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +279,7 @@ def test_double_top_produces_short():
 def test_returns_recommendation_with_correct_timestamp(sample_ohlcv_data):
     """The returned StrategyRecommendation.timestamp matches the input timestamp."""
     strategy = BjorgumDoubleTapStrategy()
-    df = sample_ohlcv_data.iloc[: strategy.MIN_BARS + 50].copy()
+    df = sample_ohlcv_data.iloc[: strategy.MIN_CANDLES_REQUIRED + 50].copy()
     ts = df["date"].iloc[-1].to_pydatetime()
     rec = strategy.run(df, ts)
     assert rec.timestamp == ts

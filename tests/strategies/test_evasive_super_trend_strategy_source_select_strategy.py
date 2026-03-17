@@ -72,7 +72,7 @@ def test_import():
 def test_min_bars_guard_returns_hold():
     """Returns HOLD when fewer than MIN_BARS candles are provided."""
     strategy = EvasiveSuperTrendStrategySourceSelectStrategy()
-    min_bars = strategy.MIN_BARS
+    min_bars = strategy.MIN_CANDLES_REQUIRED
 
     n = min_bars - 1
     close = np.full(n, 10_000.0)
@@ -154,7 +154,7 @@ def test_bulk_run_produces_valid_signals(sample_ohlcv_data):
     df = sample_ohlcv_data
 
     all_signals = []
-    for i in range(strategy.MIN_BARS, len(df) + 1):
+    for i in range(strategy.MIN_CANDLES_REQUIRED, len(df) + 1):
         slice_df = df.iloc[:i].copy()
         ts = slice_df["date"].iloc[-1].to_pydatetime()
         rec = strategy.run(slice_df, ts)
@@ -166,7 +166,7 @@ def test_bulk_run_produces_valid_signals(sample_ohlcv_data):
     assert not invalid, f"Invalid signals found: {invalid}"
 
     counts = Counter(all_signals)
-    print(f"\nSignal distribution (bars {strategy.MIN_BARS}–{len(df)}): {dict(counts)}")
+    print(f"\nSignal distribution (bars {strategy.MIN_CANDLES_REQUIRED}–{len(df)}): {dict(counts)}")
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +213,7 @@ def test_synthetic_long_signal():
 
     # Scan for a LONG signal in the reversal phase
     long_found = False
-    for i in range(strategy.MIN_BARS, len(df) + 1):
+    for i in range(strategy.MIN_CANDLES_REQUIRED, len(df) + 1):
         slice_df = df.iloc[:i].copy()
         ts_i = slice_df["date"].iloc[-1].to_pydatetime()
         rec_i = strategy.run(slice_df, ts_i)
@@ -252,7 +252,7 @@ def test_synthetic_short_signal():
     df = _make_df(close, freq="1h")
 
     short_found = False
-    for i in range(strategy.MIN_BARS, len(df) + 1):
+    for i in range(strategy.MIN_CANDLES_REQUIRED, len(df) + 1):
         slice_df = df.iloc[:i].copy()
         ts_i = slice_df["date"].iloc[-1].to_pydatetime()
         rec_i = strategy.run(slice_df, ts_i)
@@ -272,7 +272,7 @@ def test_synthetic_short_signal():
 def test_returns_recommendation_with_correct_timestamp(sample_ohlcv_data):
     """The returned StrategyRecommendation.timestamp matches the input timestamp."""
     strategy = EvasiveSuperTrendStrategySourceSelectStrategy()
-    df = sample_ohlcv_data.iloc[: strategy.MIN_BARS + 50].copy()
+    df = sample_ohlcv_data.iloc[: strategy.MIN_CANDLES_REQUIRED + 50].copy()
     ts = df["date"].iloc[-1].to_pydatetime()
     rec = strategy.run(df, ts)
     assert rec.timestamp == ts
