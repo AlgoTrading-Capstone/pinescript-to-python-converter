@@ -8,7 +8,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 
 from src.base_strategy import SignalType, StrategyRecommendation
-from src.strategies.all_day_futures_scalper_ema_trend_cross_atr_brackets import (
+from src.strategies.all_day_futures_scalper_ema_trend_cross_atr_brackets_strategy import (
     AllDayFuturesScalperEmaTrendCrossAtrBrackets,
 )
 
@@ -49,8 +49,6 @@ def _df_with_crossover(n: int = 700, trend: str = "up") -> pd.DataFrame:
     close = base + noise
 
     # Force a crossover on the last bar using a large ±500 swing.
-    # A ±500 move is sufficient to push the fast EMA across the slow EMA
-    # regardless of the EMA spread accumulated by the prior trend.
     if trend == "up":
         close[-2] = close[-3] - 500  # fast EMA dips below slow at n-2
         close[-1] = close[-3] + 500  # fast EMA surges above slow at n-1 (crossover)
@@ -105,7 +103,7 @@ class TestContract:
     def test_insufficient_data_returns_hold(self):
         """With fewer bars than 3 * trend_len (600) the strategy must HOLD."""
         s = _make_strategy(trend_len=200)
-        short_df = _df_with_crossover(n=50)  # 50 < 600 (3 * 200)
+        short_df = _df_with_crossover(n=50)
         result = s.run(short_df, _ts())
         assert result.signal == SignalType.HOLD
 
@@ -147,20 +145,14 @@ class TestSignals:
         assert result.signal != SignalType.SHORT
 
     def test_no_long_when_trend_is_down(self):
-        """Bullish EMA cross should not generate LONG when price < trend EMA."""
         s = _make_strategy(cooldown_bars=0, use_chop_filter=False)
         df = _df_with_crossover(n=700, trend="down")
-        # Manually create a bullish cross in a downtrend frame — still price < trend EMA
-        # The fixture already gives a bearish cross in downtrend; we just verify LONG is absent.
         result = s.run(df, _ts())
         assert result.signal != SignalType.LONG
 
     def test_hold_when_no_crossover(self, sample_ohlcv_data):
-        """conftest fixture has no guaranteed crossover on the last bar."""
         s = _make_strategy(cooldown_bars=0, use_chop_filter=False)
         result = s.run(sample_ohlcv_data, _ts())
-        # We can't assert exact signal without knowing the last bar of fixture,
-        # but it must be a valid SignalType.
         assert result.signal in list(SignalType)
 
 
@@ -170,11 +162,10 @@ class TestSignals:
 
 class TestChopFilter:
     def test_chop_filter_suppresses_low_atr(self):
-        """Set min_atr_pct to an absurdly high value so the filter always blocks."""
         s = _make_strategy(
             cooldown_bars=0,
             use_chop_filter=True,
-            min_atr_pct=9999.0,  # ATR% will never reach this
+            min_atr_pct=9999.0,
         )
         df = _df_with_crossover(n=700, trend="up")
         result = s.run(df, _ts())
@@ -202,8 +193,6 @@ class TestDefaults:
         assert s.tp_atr == 1.5
         assert s.use_be is True
         assert s.be_atr == 1.0
-        # cooldown_bars parameter is retained for API compatibility but has no effect;
-        # post-exit cooldown must be configured at the execution layer.
         assert s.cooldown_bars == 3
         assert s.use_chop_filter is True
         assert s.min_atr_pct == pytest.approx(0.05)

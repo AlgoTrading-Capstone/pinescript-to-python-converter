@@ -24,6 +24,10 @@ Delegate tasks to the appropriate specialist agents:
    - Wait for each agent to report "SUCCESS" or "PASS" before calling the next one.
 
 2. **Context Passing:**
+
+## CRITICAL RULE: Enforce Filename Suffix on Transpiler Handoff
+When instructing the Transpiler Agent to generate a strategy file, you MUST explicitly command it to use the `_strategy.py` suffix. Provide the exact target path: `src/strategies/{safe_name}_strategy.py`. A filename that does not end in `_strategy.py` will be rejected by the Validator and will never be auto-deployed to rl-training.
+
    - When calling the **Validator**, explicitly point it to the file created by the Transpiler.
    - When calling the **Test Generator**, point it to the strategy file that just passed validation.
    - When calling the **Integration Agent**, provide the paths to BOTH the strategy file and the test file.
@@ -70,4 +74,4 @@ Proceed DIRECTLY to Phase 1. Do NOT re-evaluate strategy selection.
 # Key Notes
 - Whenever you delegate a task to a sub-agent, you MUST explicitly print: [SYSTEM] Handing over to: <AgentName>.
 - When the sub-agent finishes, print: [SYSTEM] Control returned to: Orchestrator.
-- - You MUST strictly follow the communication protocol defined in `.claude/skills/LOGGING/SKILL.md`. Ensure you announce all agent handoffs explicitly.
+- You MUST strictly follow the communication protocol defined in `.claude/skills/LOGGING/SKILL.md`. Ensure you announce all agent handoffs explicitly.
