@@ -25,6 +25,12 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Prevent concurrent runs from racing to push to rl-training.
+    # cancel-in-progress: false queues the second run instead of dropping it,
+    # so no deployment is silently skipped when two events fire at merge time.
+    concurrency:
+      group: deploy-to-rl-training
+      cancel-in-progress: false
     # For PR events: only run on genuine merges.
     # For manual dispatch: always run.
     if: >-
@@ -62,12 +68,15 @@ jobs:
         echo "EOF" >> "$GITHUB_OUTPUT"
 
     # Step 3b: Automatic post-merge push — diff pre-push SHA against HEAD.
+    # --diff-filter=AR catches both genuinely Added files and Renames whose
+    # destination path matches *_strategy.py (e.g. a file renamed from a
+    # non-_strategy.py suffix to _strategy.py).
     - name: Identify strategy files (Push)
       if: github.event_name == 'push'
       id: detect_push
       run: |
         echo "Push to main: diffing ${{ github.event.before }}..HEAD"
-        NEW_FILES=$(git diff --name-only --diff-filter=A \
+        NEW_FILES=$(git diff --name-only --diff-filter=AR \
           "${{ github.event.before }}" HEAD \
           -- 'src/strategies/*_strategy.py')
         echo "new_files<<EOF" >> "$GITHUB_OUTPUT"
@@ -80,7 +89,7 @@ jobs:
       id: detect_pr
       run: |
         echo "PR merge: diffing ${{ github.event.pull_request.base.sha }}..HEAD"
-        NEW_FILES=$(git diff --name-only --diff-filter=A \
+        NEW_FILES=$(git diff --name-only --diff-filter=AR \
           "${{ github.event.pull_request.base.sha }}" HEAD \
           -- 'src/strategies/*_strategy.py')
         echo "new_files<<EOF" >> "$GITHUB_OUTPUT"
