@@ -267,26 +267,6 @@
     "recommendation_reason": "Evaluation failed — scored 0.",
     "archived_at": "2026-03-16T11:50:44.573661+00:00"
   },
-  "Traling-SL-Target.pine": {
-    "file_path": "archive\\Traling-SL-Target.pine",
-    "status": "completed",
-    "registered_at": "2026-03-16T11:45:32.096883+00:00",
-    "scrape_source": "editors_pick",
-    "evaluated_at": "2026-03-16T11:45:59.544267+00:00",
-    "pine_metadata": {
-      "name": "Traling.SL.Target",
-      "safe_name": "traling_sl_target",
-      "timeframe": "15m",
-      "lookback_bars": 50
-    },
-    "btc_score": 3,
-    "project_score": 2,
-    "recommendation_reason": "Simple EMA-20/50 crossover entries with a custom per-bar trailing SL/Target state machine. The core signal is generic and has no BTC-specific edge. The conversion challenge is high: the trailing logic updates multiple `var` state variables (long_entry_price, long_target, long_sl, etc.) conditionally each bar and references `strategy.position_size` mid-bar, making clean vectorization difficult without a bar-by-bar loop. Visual-only elements (table, labels, tooltips) are throwaway. The trailing mechanism is the only differentiator, but it can be approximated with a vectorized loop; however the dual-mode (% vs fixed-points) adds branching complexity. Combined score 5/10 — borderline; the concept is useful but the implementation complexity-to-value ratio is low.",
-    "skip_count": 1,
-    "converted_at": "2026-03-21T11:31:54.959520+00:00",
-    "archived_at": "2026-03-21T11:31:54.959520+00:00",
-    "output_dir": "output\\traling_sl_target\\2026-03-21_11-27-49"
-  },
   "AI-Brain-RSI-Structure-Tracker.pine": {
     "file_path": "input\\AI-Brain-RSI-Structure-Tracker.pine",
     "status": "selected",
