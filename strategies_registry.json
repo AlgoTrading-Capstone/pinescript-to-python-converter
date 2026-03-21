@@ -1,0 +1,414 @@
+{
+  "All-Day-Futures-Scalper-EMA-Trend-Cross-ATR-Brackets.pine": {
+    "file_path": "input\\All-Day-Futures-Scalper-EMA-Trend-Cross-ATR-Brackets.pine",
+    "status": "completed",
+    "registered_at": "2026-03-05T08:21:52.321018+00:00",
+    "evaluated_at": "2026-03-05T08:22:16.894360+00:00",
+    "pine_metadata": {
+      "name": "All-Day Futures Scalper (EMA Trend + Cross + ATR Brackets)",
+      "safe_name": "all_day_futures_scalper_ema_trend_cross_atr_brackets",
+      "timeframe": "15m",
+      "lookback_bars": 200
+    },
+    "btc_score": 3,
+    "project_score": 4,
+    "recommendation_reason": "Clean EMA crossover strategy (9/21) filtered by 200 EMA trend direction with ATR-based brackets (1.0x SL / 1.5x TP) and optional breakeven. BTC score is moderate (3/5): the trend filter and positive R:R ratio are sound, but EMA crossovers generate whipsaw signals in BTC's frequent ranging/choppy periods — the chop filter helps but doesn't eliminate this. Project score is high (4/5): all indicators are standard TA-Lib (EMA, ATR), no multi-timeframe logic, no forbidden functions, and process_orders_on_close=true aligns well with bar-level Python backtesting. The only conversion complexity is the stateful cooldown counter (var int lastFlatBar) and the per-bar breakeven check using intra-bar high/low — both are straightforward to vectorize with pandas shift and cummax/cummin.",
+    "converted_at": "2026-03-05T08:28:40.661030+00:00",
+    "output_dir": "output\\all_day_futures_scalper_ema_trend_cross_atr_brackets\\2026-03-05_08-24-12",
+    "archived_at": "2026-03-14T19:22:40.291872+00:00"
+  },
+  "KAMA-Trend-Strategy.pine": {
+    "file_path": "archive\\KAMA-Trend-Strategy.pine",
+    "status": "completed",
+    "registered_at": "2026-03-11T11:36:16.285558+00:00",
+    "evaluated_at": "2026-03-11T11:36:43.966988+00:00",
+    "pine_metadata": {
+      "name": "KAMA Trend Strategy",
+      "safe_name": "kama_trend_strategy",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "btc_score": 4,
+    "project_score": 4,
+    "recommendation_reason": "Dual Kaufman Adaptive Moving Average crossover with ATR-based SL/TP. KAMA's noise-filtering adapts naturally to BTC's alternating trend/chop regimes, making it a solid fit for crypto (btc_score 4). Conversion is straightforward: KAMA must be implemented in pure Python from the efficiency-ratio formula since TA-Lib's KAMA uses a single period and won't match TVta.kama(src, erLen, fastLen, slowLen); ATR, crossover/crossunder, and SL/TP logic are all direct pandas translations. No MTF resampling, no forbidden functions, and the entry/exit conditions are clean and unambiguous. Main risk is ensuring the KAMA recurrence calculation is numerically identical to TradingView's — requires careful seeding and the correct smoothing-constant formula. Overall a well-structured, medium-complexity conversion candidate (project_score 4).",
+    "converted_at": "2026-03-11T14:23:01.263024+00:00",
+    "output_dir": "output\\kama_trend_strategy\\2026-03-11_14-18-23",
+    "archived_at": "2026-03-14T19:22:40.291872+00:00"
+  },
+  "LoneWolfTradinGroup-QCBP-v1-0-3.pine": {
+    "file_path": "archive\\LoneWolfTradinGroup-QCBP-v1-0-3.pine",
+    "status": "archived",
+    "registered_at": "2026-03-11T11:36:16.285558+00:00",
+    "evaluated_at": "2026-03-11T11:36:43.974990+00:00",
+    "pine_metadata": {
+      "name": "LoneWolfTradinGroup-QCBP-v1-0-3.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "archived_at": "2026-03-11T14:23:01.265023+00:00"
+  },
+  "NEW-TOTT-Strategy.pine": {
+    "file_path": "archive\\NEW-TOTT-Strategy.pine",
+    "status": "completed",
+    "registered_at": "2026-03-11T11:36:16.285558+00:00",
+    "evaluated_at": "2026-03-11T11:37:16.735974+00:00",
+    "pine_metadata": {
+      "name": "NEW TOTT Strategy",
+      "safe_name": "new_tott_strategy",
+      "timeframe": "15m",
+      "lookback_bars": 49
+    },
+    "btc_score": 3,
+    "project_score": 3,
+    "recommendation_reason": "Twin OTT (Optimized Trend Tracker) strategy using a configurable moving average (13 types) with adaptive trailing stop bands for signal generation. Core logic is trend-following and suits BTC's directional moves, but the coefficient-based twin bands (OTTup/OTTdn) are very narrow by default (0.001), which may cause frequent whipsaws on a volatile asset. Conversion complexity is moderate: VAR, WWMA, ZLEMA, TSF, DEMA, HMA each require custom Pandas implementations; the recursive longStop/shortStop/dir state requires careful pandas iteration or cumulative logic; and the breakeven + multi-TP risk management (all disabled by default) adds optional but substantial complexity. The core signal path (MA → OTT bands → crossover entries) is clean and well-scoped for conversion without the optional risk management layer.",
+    "converted_at": "2026-03-14T14:30:50.959232+00:00",
+    "output_dir": "output\\new_tott_strategy\\2026-03-14_14-21-20",
+    "archived_at": "2026-03-14T19:22:40.295422+00:00"
+  },
+  "Special-K-Strategy.pine": {
+    "file_path": "archive\\Special-K-Strategy.pine",
+    "status": "completed",
+    "registered_at": "2026-03-11T11:36:16.285558+00:00",
+    "evaluated_at": "2026-03-11T11:37:45.993225+00:00",
+    "pine_metadata": {
+      "name": "Special K Strategy",
+      "safe_name": "special_k_strategy",
+      "timeframe": "1D",
+      "lookback_bars": 824
+    },
+    "btc_score": 3,
+    "project_score": 3,
+    "recommendation_reason": "Pring's Special K is a well-known composite momentum oscillator designed for macro trend-following — a reasonable fit for BTC on daily timeframes where it can capture multi-week swings. The zero-line and slope filters reduce noise, and ATR-based stops/targets provide structured risk management. However, the critical challenge for conversion is the `import TradingView/ta/11 as TVta` library call: `TVta.specialK()` must be reverse-engineered from Pring's original formula (a weighted sum of multiple ROC periods each smoothed by different MAs), which adds significant implementation complexity. The 724-bar minimum history requirement and dual signal-line smoothing (len1, len2 both defaulting to 100) also push lookback requirements high. The strategy is clean and well-structured, but the dependency on an opaque TradingView library function makes it a medium-difficulty conversion with meaningful research overhead.",
+    "converted_at": "2026-03-14T16:38:47.292334+00:00",
+    "output_dir": "output\\special_k_strategy\\2026-03-14_16-33-37",
+    "archived_at": "2026-03-14T19:22:40.295422+00:00"
+  },
+  "TASC-2026-03-One-Percent-A-Week.pine": {
+    "file_path": "archive\\TASC-2026-03-One-Percent-A-Week.pine",
+    "status": "archived",
+    "registered_at": "2026-03-14T14:20:57.446767+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-14T14:21:20.685233+00:00",
+    "pine_metadata": {
+      "name": "TASC 2026.03 One Percent A Week",
+      "safe_name": "tasc_2026_03_one_percent_a_week",
+      "timeframe": "1D",
+      "lookback_bars": 10
+    },
+    "btc_score": 1,
+    "project_score": 3,
+    "recommendation_reason": "Strategy is purpose-built for TQQQ (leveraged US equity ETF) and anchors entirely on US stock market session structure: Monday first-bar weekly open, Friday last-bar hard exit, and session.isfirstbar_regular/islastbar_regular guards. BTC trades 24/7 with no such session boundaries, making the core timing logic inapplicable without fundamental redesign. Project fit is moderate — the logic is clean and well-structured, but conversion complexity is high due to limit-order-across-day sequencing, OCA bracket management, and session-aware state machines (sendPT/beSent flags). A Python port would require simulating multi-day pending limit orders and session boundaries, which goes well beyond standard vectorized backtesting. Recommended only if the team wants to explore weekly mean-reversion patterns adapted for crypto (e.g., using Monday UTC open as proxy).",
+    "skip_count": 2,
+    "archived_at": "2026-03-21T11:31:54.961578+00:00"
+  },
+  "zz-shot.pine": {
+    "file_path": "archive\\zz-shot.pine",
+    "status": "archived",
+    "registered_at": "2026-03-14T14:20:57.448430+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-14T14:21:20.698326+00:00",
+    "pine_metadata": {
+      "name": "zz-shot.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "archived_at": "2026-03-14T14:30:50.962746+00:00"
+  },
+  "APEX-V2-JOAT.pine": {
+    "file_path": "archive\\APEX-V2-JOAT.pine",
+    "status": "archived",
+    "registered_at": "2026-03-14T16:33:37.597950+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-14T16:33:37.604091+00:00",
+    "pine_metadata": {
+      "name": "APEX-V2-JOAT.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "archived_at": "2026-03-14T16:38:47.295374+00:00"
+  },
+  "Rudy-Breakout-Momentum-v2.pine": {
+    "file_path": "archive\\Rudy-Breakout-Momentum-v2.pine",
+    "status": "completed",
+    "registered_at": "2026-03-14T17:55:19.951167+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-14T17:55:43.680949+00:00",
+    "pine_metadata": {
+      "name": "Rudy Breakout Momentum v2",
+      "safe_name": "rudy_breakout_momentum_v2",
+      "timeframe": "1D",
+      "lookback_bars": 126
+    },
+    "btc_score": 2,
+    "project_score": 4,
+    "recommendation_reason": "Explicitly designed for large/mid-cap momentum stocks (NVDA, AMZN, GOOGL, etc.), so BTC fit is weak — breakout logic and 8%/15% stop/target params are tuned for equities, not crypto volatility. Project fit is strong: clean Pine v6 code, only standard indicators (EMA, RSI, ta.highest), no MTF complexity, no custom indicators, and the lookahead guard (high126[1]) is already correct. Straightforward to transpile.",
+    "converted_at": "2026-03-14T18:05:46.962651+00:00",
+    "output_dir": "output\\rudy_breakout_momentum_v2\\2026-03-14_17-55-43",
+    "archived_at": "2026-03-14T19:22:40.295422+00:00"
+  },
+  "Evasive-SuperTrend-Strategy-Source-Select.pine": {
+    "file_path": "archive\\Evasive-SuperTrend-Strategy-Source-Select.pine",
+    "status": "completed",
+    "registered_at": "2026-03-14T20:14:21.467899+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-14T20:14:31.910384+00:00",
+    "pine_metadata": {
+      "name": "Evasive SuperTrend Strategy [Source Select]",
+      "safe_name": "evasive_super_trend_strategy_source_select",
+      "timeframe": "1h",
+      "lookback_bars": 50
+    },
+    "btc_score": 3,
+    "project_score": 3,
+    "recommendation_reason": "Custom SuperTrend with noise-avoidance logic (ATR-based threshold + expansion alpha). Clean entry/exit via trend change detection. Configurable source input adds flexibility. Logic is straightforward to vectorize: ATR bands, iterative trend tracking, and noise gate can all be expressed in pandas/numpy loops or using talib.ATR. Main challenge is the stateful trend variable requiring a forward loop, but no MTF or complex dependencies. Mid-tier BTC score due to no filters (volume, RSI, etc.) and always-in-market long/short entries, which may underperform in choppy BTC conditions. Project score is moderate — good complexity for conversion but lacks risk management hooks.",
+    "converted_at": "2026-03-16T11:50:44.571665+00:00",
+    "archived_at": "2026-03-16T11:50:44.571665+00:00",
+    "output_dir": "output\\evasive_super_trend_strategy_source_select\\2026-03-16_11-45-59"
+  },
+  "Trading-Report-Generator-from-CSV.pine": {
+    "file_path": "archive\\Trading-Report-Generator-from-CSV.pine",
+    "status": "archived",
+    "registered_at": "2026-03-14T20:14:21.467899+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-16T08:30:31.690389+00:00",
+    "pine_metadata": {
+      "name": "Trading Report Generator from CSV",
+      "safe_name": "trading_report_generator_from_csv",
+      "timeframe": "any",
+      "lookback_bars": 100
+    },
+    "btc_score": 0,
+    "project_score": 1,
+    "recommendation_reason": "This is not a trading strategy — it is a CSV trade importer/replayer that reads user-pasted transactions and places corresponding orders on the chart for visualization purposes. It contains zero signal generation logic, no technical indicators, and no entry/exit rules. The core mechanism (parsing a text_area input and replaying historical trades by timestamp) has no meaningful mapping to the BaseStrategy contract (run(df, timestamp) -> StrategyRecommendation). Conversion would produce an empty or trivially useless strategy file. Strongly recommend archiving.",
+    "archived_at": "2026-03-16T08:36:05.863276+00:00"
+  },
+  "TrendMaster-Pro-2-3-with-Alerts.pine": {
+    "file_path": "archive\\TrendMaster-Pro-2-3-with-Alerts.pine",
+    "status": "completed",
+    "registered_at": "2026-03-14T20:14:21.469509+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-14T20:15:30.750236+00:00",
+    "pine_metadata": {
+      "name": "TrendMaster Pro 2.3 with Alerts",
+      "safe_name": "trendmaster_pro_2_3_with_alerts",
+      "timeframe": "15m",
+      "lookback_bars": 50
+    },
+    "btc_score": 3,
+    "project_score": 3,
+    "recommendation_reason": "Multi-indicator MA crossover strategy (9/21 cross) with 6 confirmation filters (RSI, MACD, Stochastic, ADX, Bollinger Bands, trend MA). Core signal logic is clean and well-structured, making the trading logic extractable. However, several conversion challenges reduce scores: (1) request.security() is called with lookahead_on=true — a direct lookahead bias violation that must be remediated; (2) complex per-session trade counters and TP/SL hit limits rely on broker state (strategy.closedtrades, strategy.position_size) that requires careful simulation; (3) session-based trading logic (Asia/London/NY sessions) is less meaningful for 24/7 BTC markets, reducing BTC suitability; (4) Pine Script v6 features (input.enum, enum types) require translation. Visual/drawing components (pivot S/R lines, fill plots, session backgrounds) are purely cosmetic and can be ignored. The strategy is convertible but requires non-trivial state management work.",
+    "converted_at": "2026-03-17T14:03:22.911309+00:00",
+    "archived_at": "2026-03-17T14:03:22.911309+00:00",
+    "output_dir": "output\\trendmaster_pro_2_3_with_alerts\\2026-03-17_13-55-12"
+  },
+  "Bjorgum-Double-Tap.pine": {
+    "file_path": "archive\\Bjorgum-Double-Tap.pine",
+    "status": "completed",
+    "registered_at": "2026-03-16T08:29:14.869845+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-16T08:29:44.664795+00:00",
+    "pine_metadata": {
+      "name": "Bjorgum Double Tap",
+      "safe_name": "bjorgum_double_tap",
+      "timeframe": "4h",
+      "lookback_bars": 300
+    },
+    "btc_score": 4,
+    "project_score": 3,
+    "recommendation_reason": "Classic double top/bottom pattern recognition strategy with configurable pivot detection, Fib-based targets, and optional ATR trailing stop — all well-suited for BTC's trending and reversal behavior. Core algorithm (pivot matrix tracking, pattern matching, level calculation) is deterministic and translatable to pandas/numpy. Main conversion challenges: the rolling 5-row matrix for pivot state, stateful direction tracking, and the _double/_scan/_inTrade chain of closures that carry persistent flags — all require careful vectorized re-implementation. Visual and alert-string code (lines, labels, linefill, JSON formatters for 3Commas/Alertatron/Discord) can be dropped entirely. Medium-high complexity but well-scoped logic makes it a solid conversion candidate.",
+    "converted_at": "2026-03-16T08:36:05.861275+00:00",
+    "archived_at": "2026-03-16T08:36:05.861275+00:00",
+    "output_dir": "output\\bjorgum_double_tap\\2026-03-16_08-30-31"
+  },
+  "Greer-Leap-Self-Optimizing-XGBoost-Approx-Stats.pine": {
+    "file_path": "archive\\Greer-Leap-Self-Optimizing-XGBoost-Approx-Stats.pine",
+    "status": "archived",
+    "registered_at": "2026-03-16T08:29:14.869845+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-16T08:30:14.590109+00:00",
+    "pine_metadata": {
+      "name": "Private-DO-NOT-USE-Self-Optimizing XGBoost Approx & Stats",
+      "safe_name": "greer_leap_self_optimizing_xgboost_approx_stats",
+      "timeframe": "15m",
+      "lookback_bars": 100
+    },
+    "btc_score": 2,
+    "project_score": 2,
+    "recommendation_reason": "Script is explicitly marked private/test-only by the author ('Please don't like this'). The regime filter uses `barmerge.lookahead_on` in `request.security`, introducing deliberate forward-looking bias that invalidates backtests. The composite signal logic (weighted rolling correlations as XGBoost approximation) and Kalman filter are technically convertible, but fixing lookahead requires resampling utilities and careful MTF handling. Combined with the private/experimental nature and bias issues, this strategy is not recommended for pipeline conversion.",
+    "skip_count": 2,
+    "archived_at": "2026-03-21T11:31:54.962578+00:00"
+  },
+  "Machine-Learning-Lorentzian-KNN-Classifier-Update.pine": {
+    "file_path": "archive\\Machine-Learning-Lorentzian-KNN-Classifier-Update.pine",
+    "status": "archived",
+    "registered_at": "2026-03-16T11:45:32.096883+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-16T11:45:32.102881+00:00",
+    "pine_metadata": {
+      "name": "Machine-Learning-Lorentzian-KNN-Classifier-Update.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "archived_at": "2026-03-16T11:50:44.573661+00:00"
+  },
+  "Traling-SL-Target.pine": {
+    "file_path": "archive\\Traling-SL-Target.pine",
+    "status": "completed",
+    "registered_at": "2026-03-16T11:45:32.096883+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-16T11:45:59.544267+00:00",
+    "pine_metadata": {
+      "name": "Traling.SL.Target",
+      "safe_name": "traling_sl_target",
+      "timeframe": "15m",
+      "lookback_bars": 50
+    },
+    "btc_score": 3,
+    "project_score": 2,
+    "recommendation_reason": "Simple EMA-20/50 crossover entries with a custom per-bar trailing SL/Target state machine. The core signal is generic and has no BTC-specific edge. The conversion challenge is high: the trailing logic updates multiple `var` state variables (long_entry_price, long_target, long_sl, etc.) conditionally each bar and references `strategy.position_size` mid-bar, making clean vectorization difficult without a bar-by-bar loop. Visual-only elements (table, labels, tooltips) are throwaway. The trailing mechanism is the only differentiator, but it can be approximated with a vectorized loop; however the dual-mode (% vs fixed-points) adds branching complexity. Combined score 5/10 — borderline; the concept is useful but the implementation complexity-to-value ratio is low.",
+    "skip_count": 1,
+    "converted_at": "2026-03-21T11:31:54.959520+00:00",
+    "archived_at": "2026-03-21T11:31:54.959520+00:00",
+    "output_dir": "output\\traling_sl_target\\2026-03-21_11-27-49"
+  },
+  "AI-Brain-RSI-Structure-Tracker.pine": {
+    "file_path": "input\\AI-Brain-RSI-Structure-Tracker.pine",
+    "status": "selected",
+    "registered_at": "2026-03-17T13:52:46.795055+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-17T13:53:02.567669+00:00",
+    "pine_metadata": {
+      "name": "AI Brain: RSI + Structure Tracker",
+      "safe_name": "ai_brain_rsi_structure_tracker",
+      "timeframe": "15m",
+      "lookback_bars": 200
+    },
+    "btc_score": 4,
+    "project_score": 3,
+    "recommendation_reason": "Solid multi-condition strategy combining RSI crossovers, SMA trend filter (50/200), and market structure (HH/HL/LL/LH via pivot points) with ATR-based dynamic exits. BTC score is high because RSI+SMA200 trend filtering works well on BTC's trending nature, and the 3:1 ATR TP:SL ratio is reasonable. Project score is moderate: the pivot-based structure detection introduces lookahead bias risk (ta.pivothigh uses future bars by design in Pine — offset by structLookback), which requires careful handling during conversion. The label drawing code is purely visual and can be dropped. The trendState stateful variable updated by pivot logic is the main complexity; it must be correctly reconstructed in pandas using a rolling pivot detection approach. No exotic indicators — RSI, SMA, ATR are all standard TA-Lib. Overall a good candidate but requires careful anti-lookahead handling for the pivot logic."
+  },
+  "Template-Trailing-Strategy-Backtester.pine": {
+    "file_path": "archive\\Template-Trailing-Strategy-Backtester.pine",
+    "status": "archived",
+    "registered_at": "2026-03-17T13:52:46.796055+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-17T13:55:12.746498+00:00",
+    "pine_metadata": {
+      "name": "Template-Trailing-Strategy-Backtester.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "archived_at": "2026-03-17T14:03:22.913393+00:00"
+  },
+  "3Commas-Bot.pine": {
+    "file_path": "archive\\3Commas-Bot.pine",
+    "status": "completed",
+    "registered_at": "2026-03-20T13:30:10.960621+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-20T13:31:06.455037+00:00",
+    "pine_metadata": {
+      "name": "3Commas Bot",
+      "safe_name": "3commas_bot",
+      "timeframe": "any",
+      "lookback_bars": 50
+    },
+    "btc_score": 3,
+    "project_score": 3,
+    "recommendation_reason": "Standard dual-MA crossover with ATR-based swing stops and configurable R:R targets. Core logic is straightforward and BTC-compatible, but several factors complicate conversion: (1) stateful trailing stop uses `var` variables that update conditionally each bar — hard to fully vectorize; (2) HEMA type requires recursive Heikin-Ashi open calculation; (3) T3 and DEMA MA types need manual implementation; (4) 3Commas webhook alert messages are irrelevant noise and should be ignored; (5) `barstate.isconfirmed` can be treated as always True in backtesting; (6) `strategy.risk.max_drawdown` has no direct Python equivalent. Safe name '3commas_bot' starts with a digit — Python module will need a prefix (e.g., '_3commas_bot' or 'three_commas_bot'). Combined score 6/10 — convertible but requires careful handling of stateful exit logic.",
+    "converted_at": "2026-03-20T13:36:05.621976+00:00",
+    "archived_at": "2026-03-20T13:36:05.621976+00:00",
+    "output_dir": "output\\3commas_bot\\2026-03-20_13-31-29"
+  },
+  "NY15m-ORB-with-a-fixed-SL-TP-Nasdaq.pine": {
+    "file_path": "archive\\NY15m-ORB-with-a-fixed-SL-TP-Nasdaq.pine",
+    "status": "completed",
+    "registered_at": "2026-03-20T13:30:10.960621+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-20T13:31:29.895302+00:00",
+    "pine_metadata": {
+      "name": "Enhanced OR Strategy (Futures + Breakeven + TV Position Box - History)",
+      "safe_name": "ny15m_orb_with_a_fixed_sl_tp_nasdaq",
+      "timeframe": "15m",
+      "lookback_bars": 50
+    },
+    "btc_score": 2,
+    "project_score": 4,
+    "recommendation_reason": "Classic NY Opening Range Breakout on 15m bars. Logic is clean and well-scoped: build the OR during the 09:30–09:45 ET session, enter on N consecutive closes beyond the range, exit via configurable ATR/RR stop+target or EOD close. One trade per day cap keeps it simple. High project_score: ATR is TA-Lib native, the day-of-week and session-time filters translate cleanly to pandas datetime ops, and the drawing code (boxes/lines) is purely visual and can be dropped. Low BTC score: the strategy is tightly coupled to NYSE market-open timing and intraday session structure — applying it to 24/7 BTC would make the 09:30 ET session arbitrary and strip the edge entirely.",
+    "converted_at": "2026-03-21T11:16:27.083675+00:00",
+    "archived_at": "2026-03-21T11:16:27.083675+00:00",
+    "output_dir": "output\\ny15m_orb_with_a_fixed_sl_tp_nasdaq\\2026-03-21_11-07-35"
+  },
+  "Scalp-Signal-Bot-5-min-v3-0-1.pine": {
+    "file_path": "archive\\Scalp-Signal-Bot-5-min-v3-0-1.pine",
+    "status": "archived",
+    "registered_at": "2026-03-21T11:07:35.698136+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-21T11:07:35.703027+00:00",
+    "pine_metadata": {
+      "name": "Scalp-Signal-Bot-5-min-v3-0-1.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "skip_count": 1,
+    "archived_at": "2026-03-21T11:16:27.085673+00:00"
+  },
+  "Monthly-Returns-in-PineScript-Strategies.pine": {
+    "file_path": "input\\Monthly-Returns-in-PineScript-Strategies.pine",
+    "status": "evaluated",
+    "registered_at": "2026-03-21T11:27:25.628840+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-21T11:27:49.053183+00:00",
+    "pine_metadata": {
+      "name": "Monthly Returns in PineScript Strategies",
+      "safe_name": "monthly_returns_in_pinescript_strategies",
+      "timeframe": "15m",
+      "lookback_bars": 50
+    },
+    "btc_score": 2,
+    "project_score": 3,
+    "recommendation_reason": "PineScript v4 pivot-reversal strategy with a large monthly-returns display table (~60% of code) that is pure visualization and irrelevant to signal generation. Core trading logic is simple pivot-high/low breakout entries using stop orders, which complicates conversion since our framework emits signals only, not order types. pivothigh/pivotlow need custom implementations. The strategy itself is very basic — no filters, no exits beyond reversals, no risk management — limiting its value for BTC trading. Combined score 5 meets the minimum threshold but offers little alpha.",
+    "skip_count": 1
+  },
+  "Vortex-Confluence-Protocol-JOAT.pine": {
+    "file_path": "archive\\Vortex-Confluence-Protocol-JOAT.pine",
+    "status": "archived",
+    "registered_at": "2026-03-21T11:27:25.628840+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-21T11:27:49.058170+00:00",
+    "pine_metadata": {
+      "name": "Vortex-Confluence-Protocol-JOAT.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "skip_count": 1,
+    "archived_at": "2026-03-21T11:31:54.962578+00:00"
+  }
+}

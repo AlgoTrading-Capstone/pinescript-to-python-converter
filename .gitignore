@@ -209,6 +209,4 @@ __marimo__/
 # Runner runtime state
 output/
 archive/
-strategies_registry.json
-seen_urls.json
 logs/
