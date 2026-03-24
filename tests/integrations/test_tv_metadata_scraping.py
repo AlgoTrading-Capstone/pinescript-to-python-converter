@@ -37,7 +37,7 @@ from src.utils.tv_scraper import TradingViewScraper, _parse_metric_to_float
 # Test URL — a well-known public strategy with a populated Strategy Report.
 # Change this to any other public strategy URL if the original is removed.
 # ---------------------------------------------------------------------------
-_TEST_URL = "https://www.tradingview.com/script/vl30WkMq/"
+_TEST_URL = "https:/www.tradingview.com/script/9mfAwbgS/"
 
 pytestmark = pytest.mark.integration
 
