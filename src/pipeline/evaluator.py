@@ -2,47 +2,76 @@
 Evaluator — Spawns isolated AI agent processes to score PineScript strategies.
 """
 
+from __future__ import annotations
+
 import json
 import logging
+import re
 import subprocess
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from src.pipeline import SUBPROCESS_ENV, _div, _verdict
+from src.pipeline import SUBPROCESS_ENV, _verdict
+from src.pipeline.claude_cli import has_claude_cli
 from src.pipeline.registry import _now_iso, save_registry
+from src.pipeline.ui import (
+    build_table,
+    console,
+    print_info,
+    print_section,
+    print_warning,
+    truncate,
+    verdict_text,
+)
 
 logger = logging.getLogger("runner")
 
+INFRA_FAILURE_STATUSES = {"read_error", "dependency_missing", "timeout", "invalid_json"}
+FAKE_STATE_KEYWORDS = (
+    "strategy.equity",
+    "strategy.closedtrades",
+    "strategy.wintrades",
+    "strategy.grossprofit",
+    "strategy.netprofit",
+)
+POSITION_SIZING_KEYWORDS = (
+    "kelly",
+    "martingale",
+    "grid trading",
+    "dca",
+    "pyramiding",
+    "position sizing",
+    "position_size",
+    "stake amount",
+)
 
-# ---------------------------------------------------------------------------
-# Sidecar metadata schema (type-safe dataclass to prevent KeyError/TypeError
-# on malformed or partially-scraped JSON sidecars)
-# ---------------------------------------------------------------------------
 
 @dataclass
 class BacktestMetrics:
-    total_trades:     Optional[int]   = None
-    profit_factor:    Optional[float] = None
+    total_trades: Optional[int] = None
+    profit_factor: Optional[float] = None
     max_drawdown_pct: Optional[float] = None
-    sharpe_ratio:     Optional[float] = None
+    sharpe_ratio: Optional[float] = None
 
 
 @dataclass
 class StrategyMetadata:
-    url:              str = ""
-    description:      Optional[str] = None
+    url: str = ""
+    description: Optional[str] = None
     backtest_metrics: BacktestMetrics = field(default_factory=BacktestMetrics)
 
 
+@dataclass
+class EvaluationOutcome:
+    status: str
+    payload: Optional[dict] = None
+    reason: str = ""
+    display_reason: str = ""
+
+
 def _load_strategy_metadata(pine_file: Path) -> Optional[StrategyMetadata]:
-    """
-    Load and validate the .meta.json sidecar that the scraper writes alongside
-    each .pine file.  Returns None (and logs a warning) if the file is absent,
-    unreadable, or structurally invalid.  Individual missing inner fields are
-    tolerated — they default to None in the dataclass.
-    """
     sidecar = pine_file.with_suffix(".meta.json")
     if not sidecar.exists():
         return None
@@ -67,18 +96,15 @@ def _load_strategy_metadata(pine_file: Path) -> Optional[StrategyMetadata]:
             except (TypeError, ValueError):
                 return None
 
-        bm = BacktestMetrics(
-            total_trades=_int_or_none(bm_raw.get("total_trades")),
-            profit_factor=_float_or_none(bm_raw.get("profit_factor")),
-            max_drawdown_pct=_float_or_none(bm_raw.get("max_drawdown_pct")),
-            sharpe_ratio=_float_or_none(bm_raw.get("sharpe_ratio")),
-        )
-        desc = raw.get("description")
-        url  = raw.get("url", "")
         return StrategyMetadata(
-            url=str(url) if url else "",
-            description=str(desc).strip() if desc else None,
-            backtest_metrics=bm,
+            url=str(raw.get("url", "") or ""),
+            description=str(raw.get("description")).strip() if raw.get("description") else None,
+            backtest_metrics=BacktestMetrics(
+                total_trades=_int_or_none(bm_raw.get("total_trades")),
+                profit_factor=_float_or_none(bm_raw.get("profit_factor")),
+                max_drawdown_pct=_float_or_none(bm_raw.get("max_drawdown_pct")),
+                sharpe_ratio=_float_or_none(bm_raw.get("sharpe_ratio")),
+            ),
         )
     except Exception as exc:
         logger.warning(f"Could not load metadata sidecar {sidecar.name}: {exc}")
@@ -86,10 +112,6 @@ def _load_strategy_metadata(pine_file: Path) -> Optional[StrategyMetadata]:
 
 
 def _format_metadata_block(meta: StrategyMetadata) -> str:
-    """
-    Render a StrategyMetadata object as a plain-text BACKTEST_METADATA block
-    suitable for injection into the selector agent prompt.
-    """
     bm = meta.backtest_metrics
     lines = [
         "--- BACKTEST_METADATA (scraped from TradingView) ---",
@@ -99,7 +121,6 @@ def _format_metadata_block(meta: StrategyMetadata) -> str:
         f"sharpe_ratio:     {bm.sharpe_ratio if bm.sharpe_ratio is not None else 'N/A'}",
     ]
     if meta.description:
-        # Truncate very long descriptions to avoid bloating the context window.
         desc = meta.description[:1500]
         if len(meta.description) > 1500:
             desc += " [truncated]"
@@ -109,7 +130,6 @@ def _format_metadata_block(meta: StrategyMetadata) -> str:
 
 
 def _normalize_timeframe(value: str | None) -> str:
-    """Normalize selector timeframe output to the lowercase forms used downstream."""
     if not value:
         return "1h"
 
@@ -136,50 +156,125 @@ def _normalize_timeframe(value: str | None) -> str:
 
 
 def _parse_json_from_output(raw: str) -> dict:
-    """
-    Defensively parse a JSON object from raw LLM text output.
-
-    Strips Markdown fences and slices from first '{' to last '}'.
-    """
     cleaned = raw.replace("```json", "").replace("```", "").strip()
-    start   = cleaned.find("{")
-    end     = cleaned.rfind("}") + 1
+    start = cleaned.find("{")
+    end = cleaned.rfind("}") + 1
     if start == -1 or end == 0:
         raise ValueError("No JSON object found in agent output")
     return json.loads(cleaned[start:end])
 
 
-def evaluate_strategy(pine_file: Path) -> dict | None:
-    """
-    Spawn an isolated strategy_selector agent to evaluate a single .pine file.
+def _safe_name(value: str) -> str:
+    return "".join(c if c.isalnum() else "_" for c in value).strip("_")
 
-    Returns the parsed JSON evaluation dict, or None on failure/timeout.
-    """
+
+def _infer_strategy_name(raw: str, fallback: str) -> str:
+    match = re.search(r"strategy\s*\(\s*['\"]([^'\"]+)['\"]", raw)
+    return match.group(1).strip() if match else fallback
+
+
+def _best_effort_metadata(raw: str, pine_file: Path) -> dict:
+    name = _infer_strategy_name(raw, pine_file.stem)
+    return {
+        "name": name,
+        "safe_name": _safe_name(name or pine_file.stem),
+        "timeframe": _normalize_timeframe(None),
+        "lookback_bars": 100,
+    }
+
+
+def _summary_for_meta(meta: StrategyMetadata | None) -> str:
+    if meta is None:
+        return "No sidecar metadata found."
+    bm = meta.backtest_metrics
+    summary = [
+        f"trades={bm.total_trades if bm.total_trades is not None else 'N/A'}",
+        "description=yes" if meta.description else "description=no",
+    ]
+    return ", ".join(summary)
+
+
+def _contains_any(text: str, keywords: tuple[str, ...]) -> Optional[str]:
+    lowered = text.lower()
+    return next((keyword for keyword in keywords if keyword in lowered), None)
+
+
+def _detect_heavy_historical_loop(raw: str) -> Optional[str]:
+    lowered = raw.lower()
+    loop_matches = re.finditer(r"for\s+\w+\s*=\s*([^\n]+)", lowered)
+    for match in loop_matches:
+        loop_body = match.group(0)
+        if "bar_index" in loop_body or "last_bar_index" in loop_body:
+            return "Uses a loop bounded by bar_index / last_bar_index."
+        if re.search(r"to\s+\d{3,}", loop_body):
+            return "Uses a loop with a large fixed historical bound."
+        if re.search(r"to\s+\w*(lookback|history|barsback|bars_back|length)\w*", loop_body):
+            return "Uses a loop over dynamic historical lookback data."
+    return None
+
+
+def _deterministic_rejection(raw: str, meta: StrategyMetadata | None) -> Optional[str]:
+    total_trades = meta.backtest_metrics.total_trades if meta else None
+    if total_trades is not None and total_trades < 150:
+        return f"Rejected before selector: total_trades={total_trades} is below the RL minimum of 150."
+
+    fake_state = _contains_any(raw, FAKE_STATE_KEYWORDS)
+    if fake_state:
+        return f"Rejected before selector: signal logic depends on self-evaluation state via `{fake_state}`."
+
+    description = meta.description.lower() if meta and meta.description else ""
+    sizing_keyword = _contains_any(raw, POSITION_SIZING_KEYWORDS) or _contains_any(
+        description, POSITION_SIZING_KEYWORDS
+    )
+    if sizing_keyword:
+        return (
+            "Rejected before selector: strategy appears centered on position sizing / trade "
+            f"management via `{sizing_keyword}`."
+        )
+
+    heavy_loop_reason = _detect_heavy_historical_loop(raw)
+    if heavy_loop_reason:
+        return f"Rejected before selector: {heavy_loop_reason}"
+
+    return None
+
+
+def evaluate_strategy(pine_file: Path) -> EvaluationOutcome:
     try:
         raw = pine_file.read_text(encoding="utf-8", errors="replace")
-    except OSError as e:
-        logger.warning(f"Cannot read {pine_file}: {e}")
-        return None
+    except OSError as exc:
+        logger.warning(f"Cannot read {pine_file}: {exc}")
+        return EvaluationOutcome(
+            status="read_error",
+            reason=f"Could not read {pine_file.name}: {exc}",
+            display_reason="Read error",
+        )
 
     logger.info(f"Evaluating: {pine_file.name} ({len(raw)} chars)")
     logger.info(f"CLAUDE input (file path sent to agent):\n{pine_file.resolve()}")
 
-    meta_block = ""
     strategy_meta = _load_strategy_metadata(pine_file)
+    print_info(f"{pine_file.name}: {_summary_for_meta(strategy_meta)}")
+
+    rejection_reason = _deterministic_rejection(raw, strategy_meta)
+    if rejection_reason:
+        logger.info(f"Deterministic rejection for {pine_file.name}: {rejection_reason}")
+        return EvaluationOutcome(
+            status="precheck_rejected",
+            payload={
+                "pine_metadata": _best_effort_metadata(raw, pine_file),
+                "category": "Other",
+                "btc_score": 0,
+                "project_score": 0,
+                "recommendation_reason": rejection_reason,
+            },
+            reason=rejection_reason,
+            display_reason="Rejected by precheck",
+        )
+
+    meta_block = ""
     if strategy_meta is not None:
         meta_block = _format_metadata_block(strategy_meta) + "\n\n"
-        bm = strategy_meta.backtest_metrics
-        msg = (
-            f"[META] Sidecar injected into selector prompt — "
-            f"trades={bm.total_trades} "
-            f"pf={bm.profit_factor} "
-            f"dd={bm.max_drawdown_pct}% "
-            f"sharpe={bm.sharpe_ratio}"
-        )
-        logger.info(msg)
-        print(f"    {msg}", flush=True)
-    else:
-        print(f"    [META] No sidecar found for {pine_file.name} — selector runs without backtest metrics.", flush=True)
 
     prompt = (
         f"Evaluate this PineScript strategy. File: {pine_file.name}\n\n"
@@ -191,12 +286,22 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
         '"recommendation_reason": "..."}'
     )
     command = [
-        "claude", "-p",
-        "--agent", "strategy_selector",
+        "claude",
+        "-p",
+        "--agent",
+        "strategy_selector",
         "--dangerously-skip-permissions",
         "--no-session-persistence",
         prompt,
     ]
+
+    if not has_claude_cli():
+        logger.error("'claude' command not found for selector.")
+        return EvaluationOutcome(
+            status="dependency_missing",
+            reason="Claude CLI is not installed or not on PATH.",
+            display_reason="Claude CLI missing",
+        )
 
     try:
         process = subprocess.Popen(
@@ -212,13 +317,16 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
         )
     except FileNotFoundError:
         logger.error("'claude' command not found for selector.")
-        print("'claude' CLI not found.", flush=True)
-        return None
+        return EvaluationOutcome(
+            status="dependency_missing",
+            reason="Claude CLI is not installed or not on PATH.",
+            display_reason="Claude CLI missing",
+        )
 
     collected: list[str] = []
     killed_by_watchdog = threading.Event()
 
-    def _kill_on_timeout():
+    def _kill_on_timeout() -> None:
         killed_by_watchdog.set()
         try:
             process.kill()
@@ -231,7 +339,7 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
         for line in process.stdout:
             stripped = line.rstrip()
             if stripped:
-                print(f"    {stripped}", flush=True)
+                console.print(f"[muted]    selector>[/muted] {stripped}")
                 logger.info(f"CLAUDE [SELECTOR]: {stripped}")
             collected.append(line)
         process.wait()
@@ -251,83 +359,137 @@ def evaluate_strategy(pine_file: Path) -> dict | None:
 
     if killed_by_watchdog.is_set():
         logger.warning(f"Selector timed out (180s) for {pine_file.name}")
-        print("TIMED OUT", flush=True)
-        return None
+        return EvaluationOutcome(
+            status="timeout",
+            reason=f"Selector timed out after 180 seconds for {pine_file.name}.",
+            display_reason="Selector timed out",
+        )
 
     full_output = "".join(collected)
     if process.returncode != 0:
-        logger.warning(f"Selector non-zero exit for {pine_file.name}")
+        logger.warning(f"Selector non-zero exit for {pine_file.name}: {process.returncode}")
 
     try:
-        return _parse_json_from_output(full_output)
-    except (json.JSONDecodeError, ValueError) as e:
-        logger.warning(f"JSON parse error for {pine_file.name}: {e}")
-    except Exception as e:
-        logger.exception(f"Unexpected error evaluating {pine_file.name}: {e}")
-
-    return None
+        parsed = _parse_json_from_output(full_output)
+        return EvaluationOutcome(status="scored", payload=parsed)
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning(f"JSON parse error for {pine_file.name}: {exc}")
+        return EvaluationOutcome(
+            status="invalid_json",
+            reason=f"Selector returned invalid JSON for {pine_file.name}: {exc}",
+            display_reason="Selector output was not valid JSON",
+        )
+    except Exception as exc:
+        logger.exception(f"Unexpected error evaluating {pine_file.name}: {exc}")
+        return EvaluationOutcome(
+            status="invalid_json",
+            reason=f"Unexpected selector parsing error for {pine_file.name}: {exc}",
+            display_reason="Unexpected selector parsing error",
+        )
 
 
 def run_evaluations(registry: dict) -> dict:
-    """Evaluate all pending (new or zero-scored) strategies."""
+    """Evaluate all pending strategies and retry only infrastructure failures."""
     new_entries = [(k, v) for k, v in registry.items() if v["status"] == "new"]
     retry_entries = [
-        (k, v) for k, v in registry.items()
-        if v["status"] == "evaluated"
-        and v.get("btc_score", 0) == 0
-        and v.get("project_score", 0) == 0
+        (k, v)
+        for k, v in registry.items()
+        if v["status"] == "evaluation_failed"
     ]
     to_evaluate = new_entries + retry_entries
     if not to_evaluate:
         return registry
 
-    print(f"\n Evaluating {len(to_evaluate)} strategy file(s)...")
-    print(_div())
+    print_section("Evaluation")
+    print_info(f"Evaluating {len(to_evaluate)} strategy file(s).")
+
+    summary_rows: list[list[object]] = []
 
     for key, rec in to_evaluate:
-        print(f"    {key} ... ", end="", flush=True)
-        result = evaluate_strategy(Path(rec["file_path"]))
-
+        outcome = evaluate_strategy(Path(rec["file_path"]))
         required = {"pine_metadata", "category", "btc_score", "project_score"}
-        if result and required.issubset(result):
-            btc  = result["btc_score"]
+
+        if outcome.payload and required.issubset(outcome.payload):
+            result = outcome.payload
+            btc = result["btc_score"]
             proj = result["project_score"]
             meta = result["pine_metadata"]
             category = result["category"]
             if not meta.get("safe_name"):
                 raw_name = meta.get("name", key.replace(".pine", ""))
-                meta["safe_name"] = "".join(
-                    c if c.isalnum() else "_" for c in raw_name
-                ).strip("_")
+                meta["safe_name"] = _safe_name(raw_name)
             meta["timeframe"] = _normalize_timeframe(meta.get("timeframe"))
             if not meta.get("lookback_bars"):
                 meta["lookback_bars"] = 100
-            registry[key].update({
-                "status":                "evaluated",
-                "evaluated_at":          _now_iso(),
-                "pine_metadata":         meta,
-                "category":              category,
-                "btc_score":             btc,
-                "project_score":         proj,
-                "recommendation_reason": result.get("recommendation_reason", ""),
-            })
-            print(f"BTC: {'*' * btc}  Proj: {'*' * proj}  {_verdict(btc, proj)}")
+
+            registry[key].update(
+                {
+                    "status": "evaluated",
+                    "evaluated_at": _now_iso(),
+                    "evaluation_status": outcome.status,
+                    "pine_metadata": meta,
+                    "category": category,
+                    "btc_score": btc,
+                    "project_score": proj,
+                    "recommendation_reason": result.get("recommendation_reason", ""),
+                }
+            )
+            summary_rows.append(
+                [
+                    key.replace(".pine", ""),
+                    btc,
+                    proj,
+                    btc + proj,
+                    category,
+                    verdict_text(_verdict(btc, proj)),
+                    truncate(result.get("recommendation_reason", ""), 70),
+                ]
+            )
         else:
-            registry[key].update({
-                "status":                "evaluated",
-                "evaluated_at":          _now_iso(),
-                "pine_metadata":         {
-                    "name": key, "safe_name": "", "timeframe": "?", "lookback_bars": 0
-                },
-                "category":              "Other",
-                "btc_score":             0,
-                "project_score":         0,
-                "recommendation_reason": "Evaluation failed — scored 0.",
-            })
-            print("   FAILED (scored 0)")
-            logger.warning(f"Evaluation failed for {key}")
+            registry[key].update(
+                {
+                    "status": "evaluation_failed",
+                    "evaluated_at": _now_iso(),
+                    "evaluation_status": outcome.status,
+                    "pine_metadata": _best_effort_metadata("", Path(rec["file_path"])),
+                    "category": "Other",
+                    "btc_score": 0,
+                    "project_score": 0,
+                    "recommendation_reason": outcome.reason or "Evaluation failed.",
+                }
+            )
+            summary_rows.append(
+                [
+                    key.replace(".pine", ""),
+                    0,
+                    0,
+                    0,
+                    "Other",
+                    verdict_text("[SKIP]"),
+                    truncate(outcome.display_reason or outcome.reason or "Evaluation failed.", 70),
+                ]
+            )
+            logger.warning(f"Evaluation infrastructure failure for {key}: {outcome.reason}")
 
-        save_registry(registry)   # crash-safe: save after each file
+        save_registry(registry)
 
-    print(_div())
+    table = build_table(
+        "Evaluation Results",
+        [
+            ("Strategy", "left"),
+            ("BTC", "right"),
+            ("Proj", "right"),
+            ("Total", "right"),
+            ("Category", "left"),
+            ("Verdict", "left"),
+            ("Reason", "left"),
+        ],
+        summary_rows,
+    )
+    console.print(table)
+
+    infra_failures = sum(1 for rec in registry.values() if rec.get("status") == "evaluation_failed")
+    if infra_failures:
+        print_warning(f"{infra_failures} strategy file(s) had evaluation infrastructure failures and will be retried later.")
+
     return registry

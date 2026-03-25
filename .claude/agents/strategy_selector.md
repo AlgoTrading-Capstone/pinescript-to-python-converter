@@ -25,9 +25,10 @@ The block contains the following fields — any may be `N/A` when extraction fai
 - `sharpe_ratio` — annualised Sharpe ratio of the strategy's equity curve.
 - `author_description` — the author's free-text description of the strategy.
 
-When the block is present, apply the metric-based rejection rules and description scoring rules
-defined below **before** analysing the PineScript source.  When a field is `N/A`, skip only
-the rule that depends on that specific field; do not reject on missing data alone.
+When the block is present, treat `total_trades` and `author_description` as the most important
+selection inputs. `profit_factor`, `max_drawdown_pct`, and `sharpe_ratio` are informational only
+unless a rule below explicitly references them. When a field is `N/A`, skip only the rule that
+depends on that specific field; do not reject on missing data alone.
 
 # Output Schema
 {
@@ -59,15 +60,9 @@ If the file is unavailable, assume zero counts and mention that briefly in `reco
 # INSTANT REJECTION CRITERIA (Score = 0)
 If ANY of the following is true, reject immediately:
 
-## Statistical Guardrails (from BACKTEST_METADATA — only apply when the field is NOT `N/A`)
-- **Insufficient Sample Size:** `total_trades < 100`.
-  A high win-rate on fewer than 100 trades is statistical noise, not a valid RL feature-extraction signal.
-- **Catastrophic Drawdown:** `max_drawdown_pct > 40`.
-  Strategies that lose more than 40 % of equity at peak-to-trough are incompatible with RL safety constraints.
-- **Negative Edge:** `profit_factor < 1.0`.
-  The strategy loses money natively; there is no signal to extract for the RL engine.
-- **Negative Risk-Adjusted Return:** `sharpe_ratio < 0`.
-  A negative Sharpe ratio over a meaningful period indicates the strategy destroys value on a risk-adjusted basis.
+## Signal Density Guardrail (from BACKTEST_METADATA — only apply when the field is NOT `N/A`)
+- **Insufficient Signal Density:** `total_trades < 150`.
+  The RL engine needs continuous directional signal flow, not a strategy that only fires on rare anomalies.
 
 ## Structural Guardrails (always apply)
 - The script does NOT explicitly support BOTH long and short signal generation.
@@ -75,7 +70,14 @@ If ANY of the following is true, reject immediately:
 - The required warmup/lookback is absurdly high and likely to break RL training, e.g. `lookback_bars > 1000`.
 - The strategy's edge depends mainly on trade-management state
   (trailing stops, pyramiding, account size, staged exits) instead of mathematical entry triggers.
+- The strategy relies on its own historical performance or account state to generate signals.
+  Reject if the code depends on `strategy.equity`, `strategy.closedtrades`, `strategy.wintrades`,
+  `strategy.grossprofit`, `strategy.netprofit`, or manual win/loss streak tracking.
+- The strategy's primary edge is dynamic position sizing or capital allocation logic
+  (e.g. Kelly sizing, martingale, grid, DCA, pyramiding-heavy schemes) rather than entry/exit math.
 - The script relies on heavy `O(N^2)` logic, such as nested loops over historical bars with no small fixed bound.
+- The script relies on heavy `for` loops over hundreds/thousands of historical bars per candle,
+  especially loops bounded by `bar_index`, `last_bar_index`, or large historical lookback variables.
 - There is no real `strategy()` declaration or it is clearly not a trading strategy.
 
 For instant rejection:
@@ -92,14 +94,14 @@ For instant rejection:
 -2  Strategy is obviously tuned for equities or non-crypto market structure
 
 ## Description Text-Mining (apply only when `author_description` is present and not `N/A`)
-+2  The author's description explicitly mentions any of the following institutional / advanced
++3  The author's description explicitly mentions any of the following institutional / advanced
     market-structure concepts that produce high-quality RL features:
-    "Order Blocks", "Liquidity Sweeps", "Volume Profile", "VWAP bands", "Smart Money",
-    "FVG", "Fair Value Gap", "Imbalance", "Order Flow", "Market Profile".
-    (Award +2 once, even if multiple terms appear.)
+    "Order Blocks", "Liquidity Sweeps", "Volume Imbalance", "VWAP bands", "Market Structure",
+    "Volume Profile", "Smart Money", "FVG", "Fair Value Gap", "Imbalance", "Order Flow", "Market Profile".
+    (Award +3 once, even if multiple terms appear.)
 -2  The description claims extraordinary or misleading performance ("100% win rate",
-    "never loses", "Holy Grail", "guaranteed profit") OR the strategy relies on
-    martingale / pyramiding techniques as its primary sizing logic.
+    "never loses", "Holy Grail", "guaranteed profit") OR says the edge depends mainly on
+    martingale, grid trading, DCA, trailing-stop optimisation, or pyramiding-heavy sizing logic.
     (Apply -2 once regardless of how many such claims are present.)
 
 # Project Score Rubric (start at 0, cap at 5)

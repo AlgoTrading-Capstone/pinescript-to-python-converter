@@ -396,10 +396,11 @@ class TradingViewScraper:
 
     def fetch_from_two_sources(
         self,
-        n_per_source: int,
+        popular_target: int,
+        editors_target: int,
         seen_urls: set[str],
     ) -> list[tuple[str, str]]:
-        """Fetch n_per_source new URLs from Popular and n_per_source from Editor's Picks.
+        """Fetch new URLs from Popular and Editor's Picks with explicit budgets.
 
         Cross-source deduplication is enforced: an Editor's Picks URL that already
         appeared in the Popular results (or in seen_urls) is skipped, so the combined
@@ -407,16 +408,16 @@ class TradingViewScraper:
 
         Returns:
             list of (url, source_tag) tuples where source_tag is "popular" or
-            "editors_pick". Up to n_per_source * 2 entries (may be fewer if
-            listings are exhausted).
+            "editors_pick". Up to popular_target + editors_target entries
+            (may be fewer if listings are exhausted).
         """
-        popular = self._fetch_new_urls(STRATEGIES_LISTING_URL, n_per_source, seen_urls)
+        popular = self._fetch_new_urls(STRATEGIES_LISTING_URL, popular_target, seen_urls)
         logger.info(f"Popular source: {len(popular)} new URL(s) found.")
 
         # Pass the union of persisted seen_urls + freshly collected popular URLs
         # so Editor's Picks deduplication works across both sources.
         combined_seen = seen_urls | set(popular)
-        editors = self._fetch_new_urls(EDITORS_PICKS_URL, n_per_source, combined_seen)
+        editors = self._fetch_new_urls(EDITORS_PICKS_URL, editors_target, combined_seen)
         logger.info(f"Editor's Picks source: {len(editors)} new URL(s) found.")
 
         popular_tagged = [(url, "popular") for url in popular]

@@ -12,6 +12,7 @@ import threading
 from pathlib import Path
 
 from src.pipeline import LOGS_ROOT, SUBPROCESS_ENV
+from src.pipeline.ui import print_error, print_info, print_warning
 
 logger = logging.getLogger("runner")
 
@@ -26,6 +27,12 @@ _LOG_TOKENS = {
     "TEST_GENERATOR_LOG_WRITTEN",
     "INTEGRATION_LOG_WRITTEN",
 }
+_EXPECTED_AGENT_LOGS = (
+    "agent_transpiler.md",
+    "agent_validator.md",
+    "agent_test_generator.md",
+    "agent_integration.md",
+)
 
 
 def _setup_strategy_logger(strategy_name: str) -> tuple[logging.Logger, Path]:
@@ -68,8 +75,8 @@ def run_orchestrator(
       - INTEGRATION_PASS or INTEGRATION_FALLBACK token found in output
     """
     strat_logger, run_dir = _setup_strategy_logger(meta["name"])
-    print(f"     Launching orchestrator for '{meta['name']}'...")
-    print(f"     Log : {run_dir / 'run.log'}")
+    print_info(f"Launching orchestrator for '{meta['name']}'")
+    print_info(f"Run log: {run_dir / 'run.log'}")
 
     prompt = (
         "Start the conversion workflow.\n\n"
@@ -145,7 +152,7 @@ def run_orchestrator(
                 elif "control returned to: orchestrator" in lower_line:
                     current_agent = "ORCHESTRATOR"
 
-                print(f"  [{current_agent}] {stripped}", flush=True)
+                print_info(f"[{current_agent}] {stripped}")
                 strat_logger.info(f"[{current_agent}] {stripped}")
 
             process.wait()
@@ -165,7 +172,7 @@ def run_orchestrator(
 
         if killed_by_watchdog.is_set():
             strat_logger.error("Orchestrator timed out after 900s.")
-            print("\n    Orchestrator timed out (15 min).", flush=True)
+            print_error("Orchestrator timed out after 15 minutes.")
             return False, run_dir
 
         missing_log_tokens = _LOG_TOKENS - seen_log_tokens
@@ -173,10 +180,9 @@ def run_orchestrator(
             strat_logger.warning(
                 f"Sub-agent log tokens missing: {', '.join(sorted(missing_log_tokens))}"
             )
-            print(
-                f"    [WARN] Agent log tokens not seen in output: "
-                f"{', '.join(sorted(missing_log_tokens))}",
-                flush=True,
+            print_warning(
+                "Agent log tokens not seen in output: "
+                + ", ".join(sorted(missing_log_tokens))
             )
 
         if process.returncode == 0 and completion_token_found:
@@ -194,14 +200,14 @@ def run_orchestrator(
 
     except FileNotFoundError:
         strat_logger.error("'claude' command not found.")
-        print("\n    'claude' CLI not found. Is Claude Code installed and in PATH?")
+        print_error("'claude' CLI not found. Is Claude Code installed and in PATH?")
         return False, run_dir
     except Exception as e:
         strat_logger.exception(f"Unexpected error: {e}")
         return False, run_dir
 
 
-def copy_artifacts(meta: dict, output_dir: Path, run_dir: Path) -> None:
+def copy_artifacts(meta: dict, output_dir: Path, run_dir: Path, pine_file: Path) -> None:
     """Copy generated strategy, test, and log files to the output snapshot directory."""
     safe = meta.get("safe_name", "")
     for src in Path("src/strategies").glob(f"*{safe}*.py"):
@@ -216,35 +222,30 @@ def copy_artifacts(meta: dict, output_dir: Path, run_dir: Path) -> None:
     if run_log.exists():
         shutil.copy2(run_log, output_dir / "run.log")
 
-    # Copy .meta.json sidecar if it exists alongside the .pine file in input/.
-    # This makes the backtest metadata part of the permanent output snapshot.
-    from src.pipeline import INPUT_DIR
-    pine_candidates = list(INPUT_DIR.glob(f"*{safe}*.pine"))
-    if pine_candidates:
-        sidecar = pine_candidates[0].with_suffix(".meta.json")
-        if sidecar.exists():
-            shutil.copy2(sidecar, output_dir / "metadata.json")
-            logger.info(f"Copied metadata sidecar: {sidecar}")
+    sidecar = pine_file.with_suffix(".meta.json")
+    if sidecar.exists():
+        shutil.copy2(sidecar, output_dir / "metadata.json")
+        logger.info(f"Copied metadata sidecar: {sidecar}")
 
-    # Warn when sub-agent decision logs are absent — indicates the orchestrator
-    # agent did not enforce Rule #4 (Report File Verification Gate).
-    expected_agents = ["transpiler", "validator", "test_generator", "integration"]
-    missing = [a for a in expected_agents if not (output_dir / f"agent_{a}.md").exists()]
+    missing = missing_agent_logs(output_dir)
     if missing:
         logger.warning(
             f"[LOGGING] Missing agent decision logs in {output_dir}: "
-            + ", ".join(f"agent_{a}.md" for a in missing)
+            + ", ".join(missing)
         )
-        print(
-            f"    [WARN] Agent logs missing from output snapshot: "
-            + ", ".join(f"agent_{a}.md" for a in missing),
-            flush=True,
+        print_warning(
+            f"Agent logs missing from output snapshot: {', '.join(missing)}"
         )
 
 
-def verify_artifacts(safe_name: str) -> bool:
+def missing_agent_logs(output_dir: Path) -> list[str]:
+    return [name for name in _EXPECTED_AGENT_LOGS if not (output_dir / name).exists()]
+
+
+def verify_artifacts(safe_name: str, output_dir: Path | None = None) -> bool:
     """
-    Verify that the expected strategy and test files exist on disk.
+    Verify that the expected strategy and test files exist on disk and that
+    the output snapshot contains the expected sub-agent logs.
 
     Returns True if both are found.
     """
@@ -257,6 +258,14 @@ def verify_artifacts(safe_name: str) -> bool:
     if not test_files:
         logger.error(f"Artifact check failed: no test file found for {safe_name}")
         return False
+
+    if output_dir is not None:
+        missing = missing_agent_logs(output_dir)
+        if missing:
+            logger.error(
+                f"Artifact check failed: output snapshot is missing agent logs: {', '.join(missing)}"
+            )
+            return False
 
     logger.info(f"Artifact check passed: {strategy_file}, {test_files[0]}")
     return True

@@ -7,11 +7,11 @@ from pathlib import Path
 
 from src.pipeline import (
     ARCHIVE_SCORE_THRESHOLD,
-    MAX_SKIP_COUNT,
     _EXCLUDED_PINE_FILES,
-    _div,
     _verdict,
 )
+from src.pipeline.evaluator import INFRA_FAILURE_STATUSES
+from src.pipeline.ui import build_table, console, print_info, print_section, print_warning, truncate, verdict_text
 
 logger = logging.getLogger("runner")
 
@@ -25,45 +25,88 @@ def auto_select_strategy(registry: dict) -> tuple[str | None, dict | None]:
 
     Returns (key, record) or (None, None).
     """
-    evaluated = {
+    reportable = {
         k: v for k, v in registry.items()
-        if v["status"] in ("evaluated", "failed")
+        if v["status"] in ("evaluated", "failed", "evaluation_failed")
         and k not in _EXCLUDED_PINE_FILES
         and Path(v["file_path"]).exists()
     }
 
     # Fallback: recycle from archive if no evaluated candidates
-    if not evaluated:
-        evaluated = _recycle_from_archive(registry)
-        if not evaluated:
+    if not reportable:
+        reportable = _recycle_from_archive(registry)
+        if not reportable:
             return None, None
 
+    evaluated = {
+        k: v
+        for k, v in reportable.items()
+        if v["status"] in ("evaluated", "failed")
+        and v.get("evaluation_status") not in INFRA_FAILURE_STATUSES
+    }
+
     ranked = sorted(
-        evaluated.items(),
+        reportable.items(),
         key=lambda kv: kv[1].get("btc_score", 0) + kv[1].get("project_score", 0),
         reverse=True,
     )
 
-    print(f"\n{'═' * 70}")
-    print("  STRATEGY ANALYSIS REPORT")
-    print(f"{'═' * 70}")
-    print(f"  {'#':<4} {'Strategy':<40} {'BTC':>3} {'Proj':>4}  Verdict")
-    print(_div())
-    for i, (key, rec) in enumerate(ranked, 1):
-        btc  = rec.get("btc_score", 0)
+    rows = []
+    for key, rec in ranked:
+        btc = rec.get("btc_score", 0)
         proj = rec.get("project_score", 0)
-        name = key.replace(".pine", "")[:39]
-        failed_tag = "  [RETRY]" if rec.get("status") == "failed" else ""
-        skip_tag = f"  (skipped {rec.get('skip_count', 0)}x)" if rec.get("skip_count", 0) > 0 else ""
-        print(
-            f"  [{i}] {name:<40} "
-            f"{'*' * btc:>3} {'*' * proj:>4}  {_verdict(btc, proj)}{failed_tag}{skip_tag}"
+        total = btc + proj
+        status = rec.get("status", "unknown")
+        if status == "failed":
+            status = "conversion_failed"
+        rows.append(
+            [
+                key.replace(".pine", ""),
+                btc,
+                proj,
+                total,
+                rec.get("category", "Other"),
+                verdict_text(_verdict(btc, proj)),
+                status,
+                truncate(rec.get("recommendation_reason", ""), 80),
+            ]
         )
-    print(_div())
 
-    chosen_key, chosen_rec = ranked[0]
-    print(f"\n  Auto-selected : {chosen_key}  (highest combined score)")
-    print(f"  Reason        : {chosen_rec.get('recommendation_reason', 'N/A')}\n")
+    print_section("Strategy Analysis Report")
+    console.print(
+        build_table(
+            "Ranked Strategies",
+            [
+                ("Strategy", "left"),
+                ("BTC", "right"),
+                ("Proj", "right"),
+                ("Total", "right"),
+                ("Category", "left"),
+                ("Verdict", "left"),
+                ("State", "left"),
+                ("Reason", "left"),
+            ],
+            rows,
+        )
+    )
+
+    selectable = [
+        (key, rec)
+        for key, rec in ranked
+        if key in evaluated and (rec.get("btc_score", 0) + rec.get("project_score", 0)) > 0
+    ]
+    if not selectable:
+        infra_issues = sum(1 for rec in reportable.values() if rec.get("status") == "evaluation_failed")
+        if infra_issues:
+            print_warning(
+                f"{infra_issues} strategy file(s) are blocked by evaluation infrastructure issues."
+            )
+        print_info("No selectable strategies scored above zero. Fetching a fresh batch.")
+        return None, None
+
+    chosen_key, chosen_rec = selectable[0]
+    print_info(f"Auto-selected: {chosen_key}")
+    print_info(f"Reason: {chosen_rec.get('recommendation_reason', 'N/A')}")
 
     # Increment skip_count for all non-selected evaluated strategies
     for key, rec in registry.items():
@@ -98,6 +141,6 @@ def _recycle_from_archive(registry: dict) -> dict:
         recycled_count += 1
 
     if recycled_count:
-        print(f"  Recycled {recycled_count} strategy(ies) from archive.")
+        print_info(f"Recycled {recycled_count} strategy(ies) from archive.")
 
     return archived

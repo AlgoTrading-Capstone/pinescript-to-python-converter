@@ -37,13 +37,12 @@ def _div(char: str = "─", width: int = 70) -> str:
 
 def _verdict(btc: int, proj: int) -> str:
     total = btc + proj
-    GREEN  = '\033[92m'
-    YELLOW = '\033[93m'
-    RED    = '\033[91m'
-    RESET  = '\033[0m'
-
-    if total >= 8: return f"{GREEN}[ RECOMMENDED ]{RESET}"
-    if total >= 6: return f"{GREEN}[ GOOD ]{RESET}"
-    if total >= 4: return f"{YELLOW}[ OK ]{RESET}"
-    if total >= 2: return f"{YELLOW}[ COMPLEX ]{RESET}"
-    return f"{RED}[ SKIP ]{RESET}"
+    if total >= 8:
+        return "[RECOMMENDED]"
+    if total >= 6:
+        return "[GOOD]"
+    if total >= 4:
+        return "[OK]"
+    if total >= 2:
+        return "[COMPLEX]"
+    return "[SKIP]"

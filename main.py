@@ -9,28 +9,27 @@ Lifecycle:
 """
 
 import logging
-import shutil
 import sys
 from datetime import datetime, UTC
 from pathlib import Path
 
 from src.pipeline import (
-    ARCHIVE_DIR,
     INPUT_DIR,
     LOGS_ROOT,
     MAX_SEARCH_LOOPS,
     OUTPUT_DIR,
     TARGET_STRATEGY_COUNT,
-    _div,
     _EXCLUDED_PINE_FILES,
 )
-from src.pipeline.archiver import archive_remaining
+from src.pipeline.archiver import archive_remaining, archive_strategy_bundle
 from src.pipeline.category_counts import increment_category_count
+from src.pipeline.claude_cli import get_claude_cli_path
 from src.pipeline.evaluator import run_evaluations
 from src.pipeline.orchestrator import copy_artifacts, run_orchestrator, verify_artifacts
 from src.pipeline.registry import _now_iso, load_registry, save_registry, scan_and_register
 from src.pipeline.scraper import run_tv_scraper
 from src.pipeline.selector import auto_select_strategy
+from src.pipeline.ui import print_banner, print_error, print_info, print_section, print_success, print_warning
 
 
 # ---------------------------------------------------------------------------
@@ -58,11 +57,11 @@ def _setup_file_logger() -> logging.Logger:
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
+    start_time = datetime.now(UTC)
     logger = _setup_file_logger()
 
-    print(_div("═"))
-    print("  PineScript → Python Converter")
-    print(_div("═"))
+    print_banner("PineScript -> Python Converter")
+    print_info(f"Pipeline started at {start_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
 
     # Step 0 — Ensure at least TARGET_STRATEGY_COUNT real .pine files in input/
     INPUT_DIR.mkdir(exist_ok=True)
@@ -72,10 +71,18 @@ def main() -> None:
         run_tv_scraper(max_results=needed)
 
     # Step 1 — Scan & Register
-    print("\n  Scanning input/ for .pine files...")
+    print_section("Registry")
+    print_info("Scanning input/ for .pine files...")
     registry = load_registry()
     registry = scan_and_register(registry)
     save_registry(registry)
+
+    claude_path = get_claude_cli_path()
+    if claude_path is None:
+        print_error("Claude CLI is required for evaluation and conversion but was not found in PATH.")
+        print_info("Install Claude Code and ensure the `claude` command is available before running the pipeline.")
+        sys.exit(1)
+    print_info(f"Claude CLI detected at {claude_path}")
 
     # Step 2 — Evaluate new strategies (isolated, one at a time)
     registry = run_evaluations(registry)
@@ -87,13 +94,13 @@ def main() -> None:
         chosen_key, chosen_rec = auto_select_strategy(registry)
         if chosen_key is not None:
             break
-        print(f"\n  No valid strategies found (attempt {_attempt + 1}/{MAX_SEARCH_LOOPS}).")
-        print("  Fetching a fresh batch from TradingView...")
+        print_warning(f"No valid strategies found (attempt {_attempt + 1}/{MAX_SEARCH_LOOPS}).")
+        print_info("Fetching a fresh batch from TradingView...")
         run_tv_scraper(max_results=TARGET_STRATEGY_COUNT)
         registry = scan_and_register(registry)
         registry = run_evaluations(registry)
     else:
-        print(f"\n[FAIL] Could not find a valid strategy after {MAX_SEARCH_LOOPS} attempts.")
+        print_error(f"Could not find a valid strategy after {MAX_SEARCH_LOOPS} attempts.")
         sys.exit(1)
 
     registry[chosen_key]["status"] = "selected"
@@ -106,24 +113,22 @@ def main() -> None:
     out_dir   = OUTPUT_DIR / safe_name / ts
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    print_section("Conversion")
     success, run_dir = run_orchestrator(Path(chosen_rec["file_path"]), meta, out_dir)
 
-    # Defense-in-depth: verify artifacts exist even if token was found
-    if success and not verify_artifacts(safe_name):
-        logger.error("Token indicated success but artifacts are missing.")
-        success = False
+    if success:
+        pine_file = Path(chosen_rec["file_path"])
+        copy_artifacts(meta, out_dir, run_dir, pine_file)
+
+        # Defense-in-depth: verify artifacts exist even if token was found
+        if not verify_artifacts(safe_name, out_dir):
+            logger.error("Token indicated success but artifacts are missing.")
+            success = False
 
     if success:
-        copy_artifacts(meta, out_dir, run_dir)
-
-        # Post-conversion cleanup: move .pine to archive/
-        ARCHIVE_DIR.mkdir(exist_ok=True)
         pine_src = Path(chosen_rec["file_path"])
-        new_file_path = str(pine_src)
-        if pine_src.exists():
-            pine_dest = ARCHIVE_DIR / pine_src.name
-            shutil.move(str(pine_src), pine_dest)
-            new_file_path = str(pine_dest)
+        archived_pine = archive_strategy_bundle(pine_src)
+        new_file_path = str(archived_pine)
 
         # Single, atomic registry update
         registry[chosen_key].update({
@@ -135,22 +140,26 @@ def main() -> None:
         })
         increment_category_count(registry[chosen_key].get("category"))
         save_registry(registry)
-        print(f"\n  Conversion complete!")
-        print(f"    Artifacts → {out_dir}")
+        print_success("Conversion complete!")
+        print_info(f"Artifacts -> {out_dir}")
     else:
         registry[chosen_key].update({
             "status":    "failed",
             "failed_at": _now_iso(),
         })
         save_registry(registry)
-        print(f"\n  Orchestrator failed. See: {run_dir / 'run.log'}")
+        print_error(f"Orchestrator failed. See: {run_dir / 'run.log'}")
         sys.exit(1)
 
     # Step 5 — Smart archive
-    print("\n  Archiving low-scoring / stale strategies...")
+    print_section("Archive")
+    print_info("Archiving low-scoring / stale strategies...")
     registry = archive_remaining(registry, chosen_key)
     save_registry(registry)
-    print("\n  Done.\n")
+    end_time = datetime.now(UTC)
+    print_success("Done.")
+    print_info(f"Pipeline ended at {end_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+    print_info(f"Pipeline took {(end_time - start_time).total_seconds():.1f} seconds")
 
 
 if __name__ == "__main__":

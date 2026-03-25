@@ -11,6 +11,7 @@ from datetime import datetime, UTC
 from pathlib import Path
 
 from src.pipeline import REGISTRY_PATH, INPUT_DIR, _EXCLUDED_PINE_FILES
+from src.pipeline.ui import print_info
 
 logger = logging.getLogger("runner")
 
@@ -66,5 +67,5 @@ def scan_and_register(registry: dict) -> dict:
             logger.info(f"Registered: {key} (source: {scrape_source})")
             added += 1
     if added:
-        print(f"  Registered {added} new file(s).")
+        print_info(f"Registered {added} new file(s).")
     return registry

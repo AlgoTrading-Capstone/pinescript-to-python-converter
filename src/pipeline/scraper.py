@@ -2,12 +2,16 @@
 Scraper bridge — Wraps TradingViewScraper for pipeline use.
 """
 
+from collections import Counter
 import json
 import logging
 import sys
 from pathlib import Path
 
-from src.pipeline import INPUT_DIR, SEEN_URLS_PATH, TARGET_STRATEGY_COUNT, _div
+from rich.table import Table
+
+from src.pipeline import INPUT_DIR, SEEN_URLS_PATH, TARGET_STRATEGY_COUNT
+from src.pipeline.ui import console, print_error, print_info, print_section, print_success, print_warning
 
 logger = logging.getLogger("runner")
 
@@ -28,16 +32,31 @@ def _save_seen_urls(seen_urls: set[str]) -> None:
     SEEN_URLS_PATH.write_text(json.dumps(sorted(seen_urls), indent=2), encoding="utf-8")
 
 
+def _allocate_source_targets(max_results: int) -> tuple[int, int]:
+    """Split the scrape request across sources without undercounting odd totals."""
+    if max_results <= 0:
+        return 0, 0
+    popular_target = (max_results + 1) // 2
+    editors_target = max_results - popular_target
+    return popular_target, editors_target
+
+
 def run_tv_scraper(max_results: int = 6) -> None:
     """
     Populate input/ by scraping public TradingView strategies.
 
     Fetches from Popular + Editor's Picks, using data/seen_urls.json for dedup.
     """
-    print(f"\n[SCRAPER] input/ has fewer than {TARGET_STRATEGY_COUNT} strategies.")
-    print(f"          Fetching {max_results} more strategy file(s) from TradingView...")
-    print(f"          Sources: Popular (x{max_results // 2}) + Editor's Picks (x{max_results // 2})")
-    print(_div())
+    if max_results <= 0:
+        return
+
+    popular_target, editors_target = _allocate_source_targets(max_results)
+    print_section("Scraper")
+    print_info(f"input/ has fewer than {TARGET_STRATEGY_COUNT} strategies.")
+    print_info(f"Need {max_results} more strategy file(s) from TradingView.")
+    print_info(
+        f"Source allocation: Popular x{popular_target}, Editor's Picks x{editors_target}"
+    )
 
     # Block tv_scraper's logging.basicConfig from adding a root StreamHandler.
     _root_log = logging.getLogger()
@@ -47,8 +66,8 @@ def run_tv_scraper(max_results: int = 6) -> None:
     try:
         from src.utils.tv_scraper import TradingViewScraper
     except ImportError as exc:
-        print(f"\n[!] Cannot import TradingViewScraper: {exc}")
-        print("    Install missing deps: pip install selenium webdriver-manager")
+        print_error(f"Cannot import TradingViewScraper: {exc}")
+        print_info("Install missing deps: pip install selenium webdriver-manager")
         sys.exit(1)
 
     # Redirect scraper / driver logs to our file handler — off the terminal.
@@ -62,16 +81,21 @@ def run_tv_scraper(max_results: int = 6) -> None:
     seen_urls = _load_seen_urls()
     logger.info(f"Loaded {len(seen_urls)} previously-seen URL(s) from {SEEN_URLS_PATH}")
 
-    n_per_source = max(1, max_results // 2)
     saved = 0
     failed = 0
+    skipped_existing = 0
+    discovered_counts: Counter[str] = Counter()
+    processed_counts: Counter[str] = Counter()
+    urls: list[tuple[str, str]] = []
 
     try:
         with TradingViewScraper(headless=False) as scraper:
             urls = scraper.fetch_from_two_sources(
-                n_per_source=n_per_source,
+                popular_target=popular_target,
+                editors_target=editors_target,
                 seen_urls=seen_urls,
             )
+            discovered_counts.update(source for _, source in urls)
             logger.info(f"TV scraper found {len(urls)} new strategy URL(s) across both sources")
 
             for url, scrape_source in urls:
@@ -84,14 +108,14 @@ def run_tv_scraper(max_results: int = 6) -> None:
                 if dest.exists():
                     logger.info(f"Skipping already-downloaded: {slug}")
                     seen_urls.add(url)
+                    skipped_existing += 1
                     continue
-
-                print(f"  [{saved + 1}/{max_results}] {slug} [{scrape_source}] ... ", end="", flush=True)
 
                 try:
                     pine = scraper.fetch_pinescript(url)
                     meta = scraper.fetch_strategy_metadata(url)
                     scraper.save_to_input(pine, url, source=scrape_source, metadata=meta)
+                    processed_counts[scrape_source] += 1
                     metrics_summary = ""
                     if meta and meta.get("backtest_metrics"):
                         bm = meta["backtest_metrics"]
@@ -100,34 +124,64 @@ def run_tv_scraper(max_results: int = 6) -> None:
                             f"pf={bm.get('profit_factor')} "
                             f"dd={bm.get('max_drawdown_pct')}%"
                         )
-                    print(f"[OK]  ({len(pine):,} chars{metrics_summary})")
+                    console.print(
+                        f"[muted][{saved + 1}/{max_results}][/muted] "
+                        f"{slug} [{scrape_source}] [success][OK][/success] "
+                        f"({len(pine):,} chars{metrics_summary})"
+                    )
                     logger.info(f"Scraped: {slug} [{scrape_source}] ({len(pine)} chars{metrics_summary})")
                     seen_urls.add(url)
                     saved += 1
                 except NotImplementedError as exc:
                     first_line = str(exc).splitlines()[0]
-                    print(f"[SKIP]  {first_line}")
+                    console.print(
+                        f"[muted][{saved + 1}/{max_results}][/muted] "
+                        f"{slug} [{scrape_source}] [warning][SKIP][/warning] {first_line}"
+                    )
                     logger.warning(f"Skipped {slug}: {first_line}")
                     failed += 1
                 except Exception as exc:
-                    print(f"[FAIL]  {exc}")
+                    console.print(
+                        f"[muted][{saved + 1}/{max_results}][/muted] "
+                        f"{slug} [{scrape_source}] [error][FAIL][/error] {exc}"
+                    )
                     logger.exception(f"Error scraping {slug}: {exc}")
                     failed += 1
 
     except RuntimeError as exc:
-        print(f"\n[FATAL] Scraper runtime error: {exc}")
+        print_error(f"Scraper runtime error: {exc}")
         logger.error(f"TV scraper runtime error: {exc}")
         sys.exit(1)
     finally:
         _save_seen_urls(seen_urls)
         logger.info(f"Saved {len(seen_urls)} URL(s) to {SEEN_URLS_PATH}")
 
-    print(_div())
-    print(f"  Scraped {saved} strategy file(s) -> input/")
+    summary = Table(title="Scrape Summary", expand=False)
+    summary.add_column("Metric", style="bold")
+    summary.add_column("Value")
+    summary.add_row("Requested", str(max_results))
+    summary.add_row("Source plan", f"popular={popular_target}, editors_pick={editors_target}")
+    summary.add_row(
+        "Discovered URLs",
+        f"{len(urls)} total "
+        f"(popular={discovered_counts.get('popular', 0)}, "
+        f"editors_pick={discovered_counts.get('editors_pick', 0)})",
+    )
+    summary.add_row(
+        "Saved files",
+        f"{saved} "
+        f"(popular={processed_counts.get('popular', 0)}, "
+        f"editors_pick={processed_counts.get('editors_pick', 0)})",
+    )
+    summary.add_row("Existing skips", str(skipped_existing))
+    summary.add_row("Failures", str(failed))
+    console.print(summary)
+
+    print_success(f"Scraped {saved} strategy file(s) -> input/")
     if failed:
-        print(f"  Skipped {failed} file(s) (private or unsupported)")
+        print_warning(f"Skipped {failed} file(s) (private or unsupported)")
 
     if saved == 0:
-        print("\n[FAIL] No strategies could be scraped.")
-        print("       Manual fallback: paste PineScript into input/source_strategy.pine")
+        print_error("No strategies could be scraped.")
+        print_info("Manual fallback: paste PineScript into input/source_strategy.pine")
         sys.exit(1)

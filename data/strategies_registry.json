@@ -449,5 +449,80 @@
     "recommendation_reason": "Explicitly educational script demonstrating leverage/margin mechanics, not a viable trading strategy. Backtest metrics are catastrophic: profit_factor 0.994 (net losing), max_drawdown 94.64%, sharpe 0.112. Uses PineScript v4 stochastic crossover with 3000% equity sizing to simulate 30:1 leverage — the extreme position sizing is intentional for demo purposes and would be destructive in production. No conversion value for the RL engine.",
     "skip_count": 1,
     "archived_at": "2026-03-24T17:24:42.198558+00:00"
+  },
+  "AleksDU-Profit-Engine-V5-Neural-Trend-Stability-Filter.pine": {
+    "file_path": "input\\AleksDU-Profit-Engine-V5-Neural-Trend-Stability-Filter.pine",
+    "status": "evaluated",
+    "registered_at": "2026-03-25T07:46:53.666083+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-25T07:47:28.028280+00:00",
+    "pine_metadata": {
+      "name": "AleksDU Profit Engine V5 Neural Trend Stability Filter",
+      "safe_name": "aleks_du_profit_engine_v5_neural_trend_stability_filter",
+      "timeframe": "chart",
+      "lookback_bars": 81
+    },
+    "category": "Trend",
+    "btc_score": 1,
+    "project_score": 4,
+    "recommendation_reason": "Disqualified on backtest fundamentals: max_drawdown of 767% is catastrophic and renders the 2.174 profit_factor meaningless; negative Sharpe (-0.136) and only 8 total trades provide zero statistical confidence. Critically, the advertised Neural Stability Filter (is_con) is wired only to barcolor and never gates strategy.entry calls — signals fire unconditionally, meaning the core selling point is decorative. EMA(1) as the crossover source is mathematically identical to close, adding no signal quality. Moderate project value: the ATR trailing-stop (Chandelier Exit variant) and Hull MA helper are well-scoped transpilation targets, but the garbled Cyrillic parameter labels complicate clean variable mapping, and the stateful var ts requires careful shift-based vectorization to avoid lookahead bias. Not worth pipeline capacity given the fundamental signal logic flaw.",
+    "skip_count": 1
+  },
+  "Built-in-Kelly-ratio-for-dynamic-position-sizing.pine": {
+    "file_path": "archive\\Built-in-Kelly-ratio-for-dynamic-position-sizing.pine",
+    "status": "completed",
+    "registered_at": "2026-03-25T07:46:53.667580+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-25T07:48:00.071256+00:00",
+    "pine_metadata": {
+      "name": "Built-in Kelly ratio for dynamic position sizing",
+      "safe_name": "built_in_kelly_ratio_for_dynamic_position_sizing",
+      "timeframe": "unknown",
+      "lookback_bars": 20
+    },
+    "category": "Trend",
+    "btc_score": 5,
+    "project_score": 2,
+    "recommendation_reason": "Keltner Channel breakout core with Kelly ratio dynamic position sizing. The defining feature — Kelly sizing — is computed entirely from runtime execution state: strategy.wintrades, strategy.closedtrades, strategy.grossprofit, strategy.grossloss, and strategy.equity. These are cumulative trade-engine variables that cannot be vectorized without simulating a full stateful trade loop, which is fundamentally incompatible with our lookahead-bias-free, vectorized pipeline. Stripping the Kelly logic reduces the strategy to a plain Keltner Channel breakout (indicator lookback: length=20, atr=10), which offers no unique value. Backtest metrics are weak: Sharpe 0.157 is near-zero risk-adjusted return and max drawdown 44.5% is high. Pine v4 (not v5) adds minor porting friction. Not recommended for conversion.",
+    "converted_at": "2026-03-25T07:56:05.835164+00:00",
+    "archived_at": "2026-03-25T07:56:05.835164+00:00",
+    "output_dir": "output\\built_in_kelly_ratio_for_dynamic_position_sizing\\2026-03-25_07-48-31"
+  },
+  "Oscillator-Evaluator-Analysis-tool.pine": {
+    "file_path": "input\\Oscillator-Evaluator-Analysis-tool.pine",
+    "status": "evaluated",
+    "registered_at": "2026-03-25T07:46:53.667580+00:00",
+    "scrape_source": "editors_pick",
+    "evaluated_at": "2026-03-25T07:48:31.206545+00:00",
+    "pine_metadata": {
+      "name": "Oscillator Evaluator (Analysis tool)",
+      "safe_name": "oscillator_evaluator_analysis_tool",
+      "timeframe": "chart",
+      "lookback_bars": 600
+    },
+    "category": "Oscillator",
+    "btc_score": 3,
+    "project_score": 2,
+    "recommendation_reason": "This is a meta-analysis tool, not a production strategy. It bundles 6 entirely different sub-strategies (MA trend, MA crossover, zero-cross, extremes, mean-reversion, take-profit) behind a runtime string selector, making it impossible to transpile into a single coherent Python class. Backtest metrics are weak: profit_factor 1.148 (barely above breakeven), Sharpe 0.309, and 25.54% max drawdown. The composite RSI/Stochastic oscillators use PineScript v4 syntax with deeply recursive self-referential variables (nz(x[1])) across 14 period variants, and the adaptive MA suite (MAMA, KAMA, VIDYA, Laguerre, Super Smooth) adds significant complexity. pyramiding=500 and a $700 initial capital make backtested equity meaningless. Not suitable for RL feature extraction.",
+    "skip_count": 1
+  },
+  "Precision-Edge-System-JOAT.pine": {
+    "file_path": "archive\\Precision-Edge-System-JOAT.pine",
+    "status": "archived",
+    "registered_at": "2026-03-25T07:46:53.667580+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-03-25T07:48:31.212661+00:00",
+    "pine_metadata": {
+      "name": "Precision-Edge-System-JOAT.pine",
+      "safe_name": "",
+      "timeframe": "?",
+      "lookback_bars": 0
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Evaluation failed — scored 0.",
+    "skip_count": 1,
+    "archived_at": "2026-03-25T07:56:05.838165+00:00"
   }
 }

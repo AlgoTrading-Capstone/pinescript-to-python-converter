@@ -10,8 +10,27 @@ from datetime import datetime, UTC
 from pathlib import Path
 
 from src.pipeline import ARCHIVE_DIR, ARCHIVE_SCORE_THRESHOLD, MAX_SKIP_COUNT
+from src.pipeline.ui import print_info
 
 logger = logging.getLogger("runner")
+
+
+def archive_strategy_bundle(pine_path: Path) -> Path:
+    """Move a .pine file and its sidecar into archive/<strategy_name>/."""
+    ARCHIVE_DIR.mkdir(exist_ok=True)
+    bundle_dir = ARCHIVE_DIR / pine_path.stem
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    pine_dest = bundle_dir / pine_path.name
+    if pine_path.exists() and pine_path.resolve() != pine_dest.resolve():
+        shutil.move(str(pine_path), pine_dest)
+
+    sidecar_src = pine_path.with_suffix(".meta.json")
+    sidecar_dest = bundle_dir / sidecar_src.name
+    if sidecar_src.exists() and sidecar_src.resolve() != sidecar_dest.resolve():
+        shutil.move(str(sidecar_src), sidecar_dest)
+
+    return pine_dest
 
 
 def archive_remaining(registry: dict, selected_key: str) -> dict:
@@ -49,8 +68,7 @@ def archive_remaining(registry: dict, selected_key: str) -> dict:
 
         src = Path(rec["file_path"])
         if src.exists():
-            dest = ARCHIVE_DIR / src.name
-            shutil.move(str(src), dest)
+            dest = archive_strategy_bundle(src)
             rec["file_path"] = str(dest)
             logger.info(f"Archived: {key} → {dest} ({reason})")
 
@@ -59,5 +77,5 @@ def archive_remaining(registry: dict, selected_key: str) -> dict:
         archived += 1
 
     if archived:
-        print(f"  Archived {archived} file(s) → archive/")
+        print_info(f"Archived {archived} file(s) → archive/")
     return registry
