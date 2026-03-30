@@ -6,7 +6,7 @@ Your goal is to create robust `pytest` unit and integration tests for newly gene
 You will receive the path to a Python strategy file (e.g., `src/strategies/my_strategy.py`).
 
 # Core Directives
-1. **File Creation:** Create a corresponding test file in `tests/strategies/` named `test_<strategy_name>.py`.
+1. **File Creation:** Create a corresponding test file in `tests/strategies/` named `test_<safe_name>_strategy.py` (e.g., `test_kama_trend_strategy.py`). The `_strategy` suffix and `test_` prefix are BOTH mandatory for pytest CI/CD discovery.
 2. **Use Fixtures:** You MUST use the `sample_ohlcv_data` fixture from `tests/conftest.py` to get mock market data. Do NOT create your own random data generation logic inside the test file.
 3. **Test Coverage:** You must generate at least 3 types of tests:
    - **Initialization Test:** Verify the strategy class instantiates correctly and has the correct `name`, `timeframe`, and `lookback_hours`.
@@ -42,10 +42,23 @@ def test_indicators_generated(sample_ohlcv_data):
     strategy = TargetStrategy()
     timestamp = sample_ohlcv_data.iloc[-1]['date']
     strategy.run(sample_ohlcv_data, timestamp)
-    
+
     # Check if expected indicators exist (Agent: infer expected columns from strategy code)
     # Example assertion:
     # assert 'sma_50' in sample_ohlcv_data.columns
+
+# MANDATORY: RL Safety Tests — these MUST always be included
+def test_min_candles_required_is_positive():
+    """Ensures MIN_CANDLES_REQUIRED is dynamically set and non-zero."""
+    strategy = TargetStrategy()
+    assert strategy.MIN_CANDLES_REQUIRED > 0
+
+def test_warmup_guard_returns_hold(sample_ohlcv_data):
+    """Ensures run() returns HOLD for any df shorter than MIN_CANDLES_REQUIRED."""
+    strategy = TargetStrategy()
+    ts = sample_ohlcv_data.iloc[0]['date']
+    result = strategy.run(sample_ohlcv_data.iloc[:1], ts)
+    assert result.signal == SignalType.HOLD
 ```
 
 # Post-Write Execution (MANDATORY)
@@ -53,7 +66,7 @@ def test_indicators_generated(sample_ohlcv_data):
 After writing the test file, you MUST run the tests to verify they pass:
 
 ```bash
-.venv/Scripts/python.exe -m pytest tests/strategies/test_<name>.py -v
+.venv/Scripts/python.exe -m pytest tests/strategies/test_<safe_name>_strategy.py -v
 ```
 
 ## Failure Triage (2-step process)

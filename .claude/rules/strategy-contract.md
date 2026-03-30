@@ -15,7 +15,7 @@ This rule applies ANY TIME you are writing, editing, or reviewing a Python tradi
   ```
 All timeframe strings must be strictly lowercase (e.g., "15m", "4h").
 
-3. Allowed Libraries & Type Safety
+## 3. Allowed Libraries & Type Safety
 Allowed: pandas, numpy, talib, and src.*. No other third-party libs.
 
 TA-Lib Type Safety: NEVER use raw integers for moving average types. ALWAYS import and use from talib import MA_Type.
@@ -29,6 +29,6 @@ RMA: df.ewm(alpha=1/length, adjust=False).mean()
 def run(self, df: pd.DataFrame, timestamp: datetime) -> StrategyRecommendation:
     # Must guard execution:
     if len(df) < self.MIN_CANDLES_REQUIRED:
-        return StrategyRecommendation(SignalType.HOLD, timestamp, confidence=0.0)
+        return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
     # ... logic ...
 ```

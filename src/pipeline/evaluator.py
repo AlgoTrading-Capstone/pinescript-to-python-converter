@@ -41,7 +41,6 @@ POSITION_SIZING_KEYWORDS = (
     "martingale",
     "grid trading",
     "dca",
-    "pyramiding",
     "position sizing",
     "position_size",
     "stake amount",
@@ -422,6 +421,9 @@ def run_evaluations(registry: dict) -> dict:
             if not meta.get("lookback_bars"):
                 meta["lookback_bars"] = 100
 
+            reason = result.get("recommendation_reason", "")
+            if not reason:
+                logger.warning(f"Selector returned no recommendation_reason for {key}")
             registry[key].update(
                 {
                     "status": "evaluated",
@@ -431,7 +433,7 @@ def run_evaluations(registry: dict) -> dict:
                     "category": category,
                     "btc_score": btc,
                     "project_score": proj,
-                    "recommendation_reason": result.get("recommendation_reason", ""),
+                    "recommendation_reason": reason,
                 }
             )
             summary_rows.append(
