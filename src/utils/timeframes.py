@@ -11,7 +11,6 @@ Used by strategies that rely on precise multi-timeframe candle logic.
 """
 
 from datetime import datetime, UTC, timedelta
-import ccxt
 
 
 # Timeframe conversion table
@@ -95,11 +94,12 @@ def timeframe_to_prev_date(timeframe: str, date: datetime | None = None) -> date
     """
     Round the given datetime down to the start of the previous candle.
     """
+    import ccxt
+
     if date is None:
         date = datetime.now(UTC)
 
     timestamp_ms = datetime_to_timestamp_ms(date)
-    # ccxt returns timestamp in milliseconds
     rounded_ms = ccxt.Exchange.round_timeframe(timeframe, timestamp_ms, ccxt.ROUND_DOWN)
     return timestamp_ms_to_datetime(rounded_ms // 1000)
 
