@@ -43,6 +43,13 @@ POSITION_SIZING_KEYWORDS = (
     "position_size",
     "stake amount",
 )
+EXECUTION_FRAMEWORK_KEYWORDS = (
+    "webhook",
+    "bot",
+    "automate",
+    "framework",
+    "execution engine",
+)
 
 
 @dataclass
@@ -166,7 +173,10 @@ _REJECTION_SIGNAL_RE = re.compile(
     r"skip|reject|abort|disqualif|incompatible|broken|not viable|"
     r"cannot be converted|not recommended|structurally broken|"
     r"no viable|unresolvable|immediate(?:ly)? abort|"
-    r"recommend(?:ed)?\s+(?:skip|archiv)"
+    r"recommend(?:ed)?\s+(?:skip|archiv)|"
+    r"low(?:\s+rl)?\s+(?:value|feature)|lookahead\s+bias|penali[sz]ed|"
+    r"not\s+a\s+signal|execution\s+framework|execution\s+bot|"
+    r"webhook|bot\s+framework|not\s+suitable\s+for\s+rl"
     r")\b",
     re.IGNORECASE,
 )
@@ -241,6 +251,17 @@ def _deterministic_rejection(raw: str, meta: StrategyMetadata | None) -> Optiona
     heavy_loop_reason = _detect_heavy_historical_loop(raw)
     if heavy_loop_reason:
         return f"Rejected before selector: {heavy_loop_reason}"
+
+    # Reject execution frameworks, webhook bots, and automation templates outright.
+    # These are not mathematical signal generators and cause infinite loops in the transpiler.
+    description_text = (meta.description or "") if meta else ""
+    combined_text = f"{raw[:500]} {description_text}".lower()
+    framework_hit = _contains_any(combined_text, EXECUTION_FRAMEWORK_KEYWORDS)
+    if framework_hit:
+        return (
+            f"REJECTED: Script is an execution framework/automation bot (matched keyword: '{framework_hit}'). "
+            "This is not a mathematical signal generator and cannot be transpiled for RL feature extraction."
+        )
 
     return None
 

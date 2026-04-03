@@ -143,6 +143,22 @@ Your numerical scores MUST be consistent with your written `recommendation_reaso
   "skip", "reject", "not recommended", "abort", "disqualify", "incompatible", "broken",
   "not viable", or "cannot be converted", verify that both scores are `0`.
 
+## Hard Language Requirement for Disqualifying Scripts (NO SOFT LANGUAGE)
+If a script falls into ANY of the categories below, you MUST write the word **"REJECTED"** explicitly
+in `recommendation_reason` and set BOTH scores to `0`. Vague or diplomatic phrasing ("low value",
+"penalized", "not ideal", "limited RL applicability") will NOT trigger safety nets and causes wasted
+transpilation time. Be blunt — the downstream system depends on it.
+
+Disqualifying categories requiring explicit "REJECTED" language:
+- **Webhook / execution bots / automation templates:** Scripts that primarily dispatch alerts,
+  throttle bot orders, manage webhook payloads, or orchestrate external execution infrastructure.
+  These are NOT mathematical signal generators and CANNOT be vectorized for RL feature extraction.
+  Example trigger: `alert()` as the primary logic, webhook URL references, bot throttle variables.
+- **Lookahead bias:** The strategy's signal logic references future bars, uses `security()` with
+  `lookahead=barmerge.lookahead_on`, or relies on repainting that makes the signal non-causal.
+- **Execution frameworks:** Scripts whose primary purpose is trade management, order routing,
+  position sizing orchestration, or capital allocation — not entry/exit math signals.
+
 # Reasoning Discipline
 - Judge the ACTUAL trading logic, not cosmetic plots/tables/alerts.
 - Distinguish real bidirectional entries from exits that merely flatten a long position.
