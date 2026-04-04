@@ -10,7 +10,7 @@ import logging
 from datetime import datetime, UTC
 from pathlib import Path
 
-from src.pipeline import REGISTRY_PATH, INPUT_DIR, _EXCLUDED_PINE_FILES
+from src.pipeline import REGISTRY_PATH, INPUT_DIR, TERMINAL_STATUSES, _EXCLUDED_PINE_FILES
 from src.pipeline.ui import print_info
 
 logger = logging.getLogger("runner")
@@ -75,14 +75,31 @@ def scan_and_register(registry: dict) -> dict:
             added += 1
         else:
             rec = registry[key]
+            status = rec.get("status")
+
+            # Terminal statuses: file should not be in input/ — warn and skip
+            if status in TERMINAL_STATUSES:
+                logger.warning(
+                    f"File '{key}' is in input/ but registry status is '{status}'; skipping."
+                )
+                continue
+
+            # Archived entry found back in input/ — reconcile by re-queuing
+            if status == "archived":
+                rec["status"] = "new"
+                rec["file_path"] = str(pine_file)
+                logger.info(f"Reconciled archived entry back to input/: {key}")
+                requeued += 1
+                continue
+
             reason = str(rec.get("recommendation_reason", "") or "")
-            if rec.get("status") == "evaluated" and any(
+            if status == "evaluated" and any(
                 marker in reason for marker in _STALE_PRECHECK_MARKERS
             ):
                 rec["status"] = "new"
                 logger.info(f"Re-queued stale precheck result: {key}")
                 requeued += 1
-            elif rec.get("status") in ("evaluated", "failed"):
+            elif status in ("evaluated", "failed"):
                 btc = rec.get("btc_score", 0)
                 proj = rec.get("project_score", 0)
                 if (isinstance(btc, (int, float)) and btc > _SCORE_RANGE[1]) or \

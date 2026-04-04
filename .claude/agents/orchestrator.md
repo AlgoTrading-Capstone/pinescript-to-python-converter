@@ -119,3 +119,17 @@ Proceed DIRECTLY to Phase 1. Do NOT re-evaluate strategy selection.
 - Whenever you delegate a task to a sub-agent, you MUST explicitly print: [SYSTEM] Handing over to: <AgentName>.
 - When the sub-agent finishes, print: [SYSTEM] Control returned to: Orchestrator.
 - You MUST strictly follow the communication protocol defined in `.claude/skills/LOGGING/SKILL.md`. Ensure you announce all agent handoffs explicitly.
+
+# MANDATORY: Complete Pipeline Execution (DO NOT SKIP INTEGRATION)
+
+**The pipeline is NOT complete until the Integration Agent has run and emitted `INTEGRATION_PASS` or `INTEGRATION_FALLBACK`.**
+
+After the Test Generator succeeds, you MUST:
+1. Print `[SYSTEM] Handing over to: Integration`
+2. Invoke the Integration Agent (`.claude/agents/integration.md`) with the strategy file path, test file path, and output snapshot directory.
+3. Wait for the Integration Agent to emit `INTEGRATION_LOG_WRITTEN` and `INTEGRATION_PASS` / `INTEGRATION_FALLBACK`.
+4. Print `[SYSTEM] Control returned to: Orchestrator`
+
+**Stopping after tests pass without invoking Integration is a PIPELINE FAILURE.** The Python harness (`main.py`) checks for the `INTEGRATION_PASS` / `INTEGRATION_FALLBACK` token. If neither token appears in the output, the entire run is marked as failed — even if the strategy and tests are perfect.
+
+Do NOT summarize results and exit after tests pass. You MUST continue to the Integration Agent.

@@ -308,8 +308,20 @@ class TradingViewScraper:
 
     def close_driver(self):
         if self.driver:
-            self.driver.quit()
-            self.driver = None
+            try:
+                self.driver.quit()
+            except Exception:
+                pass
+            finally:
+                # Neutralise __del__ on the uc.Chrome object: after quit() the
+                # Windows handle is gone, so a second quit() call from __del__
+                # raises OSError WinError 6.  Replacing quit with a no-op
+                # prevents that without patching the third-party library.
+                try:
+                    self.driver.quit = lambda: None
+                except Exception:
+                    pass
+                self.driver = None
             logger.info("WebDriver closed.")
 
     def __enter__(self):

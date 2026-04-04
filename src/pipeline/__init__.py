@@ -22,6 +22,8 @@ ARCHIVE_SCORE_THRESHOLD = 4     # btc + proj < this → archive; >= this → kee
 TARGET_STRATEGY_COUNT   = 6     # minimum .pine files to keep in input/
 MAX_SEARCH_LOOPS        = 5     # retry cap for auto-selection before giving up
 MAX_SKIP_COUNT          = 2     # archive evaluated strategies after this many skips
+MAX_CONVERSION_ATTEMPTS = 3     # reject strategy after this many failed conversions
+TERMINAL_STATUSES       = frozenset({"completed", "rejected"})
 _EXCLUDED_PINE_FILES    = {"source_strategy.pine"}
 
 # Subprocess environment with CLAUDECODE stripped so nested `claude` calls are allowed.

@@ -15,8 +15,16 @@ This rule provides the high-level context of the TradingView to Python Transpila
 
 ## Registry State Machine
 Tracked in `data/strategies_registry.json`.
-Lifecycle: `new` → `evaluated` → `selected` → `converted` → `archived`.
-(Failures can be retried via `failed` state).
+```
+new → evaluated → selected → completed
+                           → failed → archived (recyclable, up to 3 attempts)
+                           → failed (3x) → rejected (TERMINAL)
+new/evaluated (low score or skipped 2x) → archived
+archived (score >= 4, recycle_eligible) → evaluated (recycled)
+PR closed without merge → rejected (TERMINAL)
+```
+Terminal statuses: `completed`, `rejected` — never re-evaluated or recycled.
+`conversion_attempts` counter tracks failures; after `MAX_CONVERSION_ATTEMPTS` (3) → `rejected`.
 
 ## Key Commands
 - Run pipeline: `python main.py`

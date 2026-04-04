@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from src.pipeline import SUBPROCESS_ENV, _verdict
+from src.pipeline import SUBPROCESS_ENV, TERMINAL_STATUSES, _verdict
 from src.pipeline.claude_cli import has_claude_cli
 from src.pipeline.registry import _now_iso, save_registry
 from src.pipeline.ui import (
@@ -417,11 +417,14 @@ def evaluate_strategy(pine_file: Path) -> EvaluationOutcome:
 
 def run_evaluations(registry: dict) -> dict:
     """Evaluate all pending strategies and retry only infrastructure failures."""
-    new_entries = [(k, v) for k, v in registry.items() if v["status"] == "new"]
+    new_entries = [
+        (k, v) for k, v in registry.items()
+        if v["status"] == "new" and v["status"] not in TERMINAL_STATUSES
+    ]
     retry_entries = [
         (k, v)
         for k, v in registry.items()
-        if v["status"] == "evaluation_failed"
+        if v["status"] == "evaluation_failed" and v["status"] not in TERMINAL_STATUSES
     ]
     to_evaluate = new_entries + retry_entries
     if not to_evaluate:

@@ -26,6 +26,7 @@ from src.pipeline.category_counts import increment_category_count
 from src.pipeline.claude_cli import get_claude_cli_path
 from src.pipeline.evaluator import run_evaluations
 from src.pipeline.orchestrator import copy_artifacts, run_orchestrator, verify_artifacts
+from src.pipeline.pr_sync import sync_pr_closure_to_registry
 from src.pipeline.registry import _now_iso, load_registry, save_registry, scan_and_register
 from src.pipeline.scraper import run_tv_scraper
 from src.pipeline.selector import auto_select_strategy
@@ -74,6 +75,13 @@ def main() -> None:
     print_section("Registry")
     print_info("Scanning input/ for .pine files...")
     registry = load_registry()
+    registry, pr_sync_updates = sync_pr_closure_to_registry(registry)
+    if pr_sync_updates:
+        save_registry(registry)
+        print_info(
+            f"GitHub PR sync: updated {pr_sync_updates} registry record(s); "
+            "strategies whose PR was closed without merge are permanently rejected."
+        )
     registry = scan_and_register(registry)
     save_registry(registry)
 
@@ -143,7 +151,9 @@ def main() -> None:
         print_success("Conversion complete!")
         print_info(f"Artifacts -> {out_dir}")
     else:
-        registry[chosen_key].update({
+        rec = registry[chosen_key]
+        rec["conversion_attempts"] = rec.get("conversion_attempts", 0) + 1
+        rec.update({
             "status":    "failed",
             "failed_at": _now_iso(),
         })

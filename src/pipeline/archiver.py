@@ -9,7 +9,7 @@ import shutil
 from datetime import datetime, UTC
 from pathlib import Path
 
-from src.pipeline import ARCHIVE_DIR, ARCHIVE_SCORE_THRESHOLD, MAX_SKIP_COUNT
+from src.pipeline import ARCHIVE_DIR, ARCHIVE_SCORE_THRESHOLD, MAX_CONVERSION_ATTEMPTS, MAX_SKIP_COUNT
 from src.pipeline.ui import print_info
 
 logger = logging.getLogger("runner")
@@ -52,28 +52,38 @@ def archive_remaining(registry: dict, selected_key: str) -> dict:
         total = rec.get("btc_score", 0) + rec.get("project_score", 0)
         skip_count = rec.get("skip_count", 0)
 
-        # Keep if score meets threshold AND not skipped too many times
-        if total >= ARCHIVE_SCORE_THRESHOLD and skip_count < MAX_SKIP_COUNT:
+        # Failed strategies: archive or reject based on attempt count
+        if rec["status"] == "failed":
+            attempts = rec.get("conversion_attempts", 0)
+            if attempts >= MAX_CONVERSION_ATTEMPTS:
+                reason = f"rejected: {attempts} failed conversion attempts"
+            else:
+                reason = "conversion_failed"
+        elif total >= ARCHIVE_SCORE_THRESHOLD and skip_count < MAX_SKIP_COUNT:
             logger.info(
                 f"Keeping '{key}' in input/ "
                 f"(total={total} >= {ARCHIVE_SCORE_THRESHOLD}, skips={skip_count})"
             )
             continue
-
-        reason = (
-            f"skip_count={skip_count} >= {MAX_SKIP_COUNT}"
-            if skip_count >= MAX_SKIP_COUNT
-            else f"total={total} < {ARCHIVE_SCORE_THRESHOLD}"
-        )
+        else:
+            reason = (
+                f"skip_count={skip_count} >= {MAX_SKIP_COUNT}"
+                if skip_count >= MAX_SKIP_COUNT
+                else f"total={total} < {ARCHIVE_SCORE_THRESHOLD}"
+            )
 
         src = Path(rec["file_path"])
         if src.exists():
             dest = archive_strategy_bundle(src)
             rec["file_path"] = str(dest)
-            logger.info(f"Archived: {key} → {dest} ({reason})")
+            logger.info(f"Archived: {key} -> {dest} ({reason})")
 
-        rec["status"]      = "archived"
-        rec["archived_at"] = datetime.now(UTC).isoformat()
+        if reason.startswith("rejected:"):
+            rec["status"] = "rejected"
+            rec["rejected_at"] = datetime.now(UTC).isoformat()
+        else:
+            rec["status"] = "archived"
+            rec["archived_at"] = datetime.now(UTC).isoformat()
         archived += 1
 
     if archived:

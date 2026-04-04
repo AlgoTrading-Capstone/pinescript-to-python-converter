@@ -46,13 +46,32 @@ pytest tests/integrations/ -v
    - **Integration:** Pushes branch and opens GitHub PR via MCP.
 5. **Archive:** Low-scoring or frequently skipped strategies are archived.
 
+## Registry State Machine
+Tracked in `data/strategies_registry.json`. Each strategy progresses through:
+```
+new → evaluated → selected → completed
+                           → failed → archived (recyclable, up to MAX_CONVERSION_ATTEMPTS)
+                           → failed (3x) → rejected (TERMINAL, never recycled)
+new/evaluated (low score or skipped 2x) → archived
+archived (score >= 4, recycle_eligible) → evaluated (recycled)
+PR closed without merge → rejected (TERMINAL)
+```
+
+**Terminal statuses** (`completed`, `rejected`) are permanent — strategies in these states are never re-evaluated, re-selected, or recycled. The `conversion_attempts` counter tracks how many times conversion has failed; after `MAX_CONVERSION_ATTEMPTS` (3) the strategy is promoted to `rejected`.
+
+**Key constants** (in `src/pipeline/__init__.py`):
+- `ARCHIVE_SCORE_THRESHOLD = 4` — btc + proj score below this → archive
+- `MAX_SKIP_COUNT = 2` — archive after being skipped this many times
+- `MAX_CONVERSION_ATTEMPTS = 3` — reject after this many failed conversions
+- `TARGET_STRATEGY_COUNT = 6` — minimum .pine files to maintain in `input/`
+
 ## Key Files & Directories
 
 | Path | Purpose |
 |---|---|
 | `main.py` | Pipeline entry point and main orchestrator trigger. |
 | `src/pipeline/` | Pipeline core modules (`registry.py`, `evaluator.py`, `orchestrator.py`, etc.). |
-| `data/strategies_registry.json` | State tracker (new → evaluated → selected → converted → archived). |
+| `data/strategies_registry.json` | State tracker (new → evaluated → selected → completed / failed → archived / rejected). |
 | `src/base_strategy.py` | **Immutable** abstract base class for all generated strategies. |
 | `src/utils/resampling.py` | Multi-Timeframe (MTF) utilities required for all `request.security` conversions. |
 | `tests/conftest.py` | Shared `sample_ohlcv_data` fixture (1,100 candles with varying market phases). |
