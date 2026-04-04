@@ -39,7 +39,7 @@ class DeltaImbalanceStrategy(BaseStrategy):
                 "normalised by a 50-bar SMA of |delta|. Enters SHORT when bull imbalance "
                 "exceeds threshold and the current candle is bearish; enters LONG when bear "
                 "imbalance exceeds threshold and the current candle is bullish. "
-                "Optimised for 1m–5m scalping."
+                "Optimised for 1m\u20135m scalping."
             ),
             timeframe="1m",
             lookback_hours=6,
