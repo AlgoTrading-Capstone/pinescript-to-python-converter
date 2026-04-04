@@ -1,23 +1,19 @@
 """
 HTF Candle Direction Strategy V1
-Converted from Pine Script by Transpiler Agent.
+Converted from PineScript v5.
 
-Trades in the direction of the Higher Timeframe (12h / 720 min) candle bias:
-  - HTF Bullish (HTF Close > HTF Open) → BUY signal
-  - HTF Bearish (HTF Close < HTF Open) → SELL signal
+Trades based on Higher Timeframe (12h) candle direction:
+- LONG when HTF candle is bullish (HTF close > HTF open) and EMA filter passes
+- SHORT when HTF candle is bearish (HTF close < HTF open) and EMA filter passes
+- One signal per calendar day (signalActive gate)
+- Optional EMA(50) filter (default ON) and Volume filter (default OFF)
 
-Optional filters:
-  - EMA(50): long only above EMA, short only below EMA
-  - Volume filter: trade only when volume exceeds 20-bar SMA * multiplier
-
-One trade per day maximum (mirrors Pine's `var bool signalActive` logic, vectorized).
-
-NOTE: The original Pine Script exposes a `useLookahead` toggle. This conversion
-permanently uses lookahead=OFF (the safe, non-repainting mode) via `resampled_merge`.
+Note: lookahead_on is disabled in this conversion to prevent lookahead bias;
+      resampled_merge provides the safe alignment equivalent of lookahead_off.
 """
 
 from datetime import datetime
-
+import numpy as np
 import pandas as pd
 import talib
 
@@ -29,118 +25,100 @@ class HtfCandleDirectionStrategyV1Strategy(BaseStrategy):
 
     def __init__(self):
         super().__init__(
-            name="HtfCandleDirectionStrategyV1Strategy",
+            name="HtfCandleDirectionStrategyV1",
             description=(
-                "Converted from Pine Script: HTF Candle Direction Strategy V1. "
-                "Trades aligned with the 12h Higher Timeframe candle direction. "
-                "Optional EMA(50) and Volume filters. One trade per calendar day."
+                "Trades based on Higher Timeframe (12h) candle direction. "
+                "Long when HTF candle is bullish, short when bearish. "
+                "EMA(50) filter enabled by default. One trade per calendar day."
             ),
-            timeframe="15m",
-            lookback_hours=600,  # 50 HTF bars × 12 h each
+            timeframe="1h",
+            lookback_hours=600,  # 50 HTF (12h) candles
         )
-
-        # --- Indicator parameters (mirrors Pine inputs) ---
         self.ema_length = 50
         self.vol_sma_length = 20
         self.vol_multiplier = 1.0
-
-        # Filters enabled by default (mirrors Pine defaults)
         self.use_ema_filter = True
-        self.use_vol_filter = False  # disabled by default in original
-
-        # HTF timeframe: Pine "720" → 720 minutes (12 h)
-        self.htf_minutes = 720
-
-        # --- Dynamic RL warmup guard ---
-        # 3× the longest base-timeframe indicator period
+        self.use_vol_filter = False
+        # Dynamic RL warmup: 3× the longest indicator period on the base timeframe
         self.MIN_CANDLES_REQUIRED = 3 * max(self.ema_length, self.vol_sma_length)
 
-    # ------------------------------------------------------------------
     def run(self, df: pd.DataFrame, timestamp: datetime) -> StrategyRecommendation:
-        # --- RL warmup guard ---
+        # --- CRITICAL RL GUARD ---
         if len(df) < self.MIN_CANDLES_REQUIRED:
             return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
 
-        # ------------------------------------------------------------------
-        # Phase 1: Multi-Timeframe – resample to 720 min (12 h)
-        # ------------------------------------------------------------------
-        resampled_df = resample_to_interval(df, self.htf_minutes)
-        if len(resampled_df) < 2:
-            return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
-        merged_df = resampled_merge(original=df, resampled=resampled_df, fill_na=True)
+        df = df.copy()
 
-        prefix = f"resample_{self.htf_minutes}"
-        htf_close = merged_df[f"{prefix}_close"]
-        htf_open = merged_df[f"{prefix}_open"]
+        # --- HTF resampling: 720 min = 12h (request.security period="720") ---
+        # Pass integer minutes directly because "12h" is not in TIMEFRAME_MINUTES_MAP
+        resampled_df = resample_to_interval(df, 720)
+        df = resampled_merge(original=df, resampled=resampled_df, fill_na=True)
 
-        # ------------------------------------------------------------------
-        # Phase 2: HTF candle direction bias
-        # ------------------------------------------------------------------
-        long_condition = htf_close > htf_open    # bullish HTF candle
-        short_condition = htf_close < htf_open   # bearish HTF candle
+        # HTF candle direction: longCondition / shortCondition
+        htf_close = df["resample_720_close"]
+        htf_open = df["resample_720_open"]
+        df["_long_cond"] = htf_close > htf_open
+        df["_short_cond"] = htf_close < htf_open
 
-        # ------------------------------------------------------------------
-        # Phase 3: Base-timeframe indicators
-        # ------------------------------------------------------------------
-        close_vals = merged_df["close"].values
-        volume_vals = merged_df["volume"].values
+        # EMA filter on base timeframe close
+        df["_ema"] = pd.Series(
+            talib.EMA(df["close"].values, timeperiod=self.ema_length),
+            index=df.index,
+        )
+        df["_ema_long"] = df["close"] > df["_ema"]
+        df["_ema_short"] = df["close"] < df["_ema"]
 
-        ema_arr = talib.EMA(close_vals, timeperiod=self.ema_length)
-        ema_series = pd.Series(ema_arr, index=merged_df.index)
+        # Volume filter: volume > SMA(volume, 20) * multiplier
+        df["_vol_avg"] = pd.Series(
+            talib.SMA(df["volume"].values, timeperiod=self.vol_sma_length),
+            index=df.index,
+        )
+        df["_vol_ok"] = df["volume"] > df["_vol_avg"] * self.vol_multiplier
 
-        vol_sma_arr = talib.SMA(volume_vals, timeperiod=self.vol_sma_length)
-        vol_avg = pd.Series(vol_sma_arr, index=merged_df.index)
-
-        ema_long = merged_df["close"] > ema_series
-        ema_short = merged_df["close"] < ema_series
-        vol_ok = merged_df["volume"] > vol_avg * self.vol_multiplier
-
-        # ------------------------------------------------------------------
-        # Phase 4: Combine filters (vectorized scalar-flag expansion)
-        # ------------------------------------------------------------------
-        if self.use_ema_filter:
-            filter_long = ema_long
-            filter_short = ema_short
+        # Combined filter logic (mirrors Pine's filterLong / filterShort)
+        if self.use_ema_filter and self.use_vol_filter:
+            df["_filter_long"] = df["_ema_long"] & df["_vol_ok"]
+            df["_filter_short"] = df["_ema_short"] & df["_vol_ok"]
+        elif self.use_ema_filter:
+            df["_filter_long"] = df["_ema_long"]
+            df["_filter_short"] = df["_ema_short"]
+        elif self.use_vol_filter:
+            df["_filter_long"] = df["_vol_ok"]
+            df["_filter_short"] = df["_vol_ok"]
         else:
-            filter_long = pd.Series(True, index=merged_df.index)
-            filter_short = pd.Series(True, index=merged_df.index)
+            df["_filter_long"] = pd.Series(True, index=df.index)
+            df["_filter_short"] = pd.Series(True, index=df.index)
 
-        if self.use_vol_filter:
-            filter_long = filter_long & vol_ok
-            filter_short = filter_short & vol_ok
+        # Raw entry conditions (before one-per-day gate)
+        df["_raw_long"] = df["_long_cond"] & df["_filter_long"]
+        df["_raw_short"] = df["_short_cond"] & df["_filter_short"]
 
-        # ------------------------------------------------------------------
-        # Phase 5: Raw entry conditions
-        # ------------------------------------------------------------------
-        raw_long = long_condition & filter_long
-        raw_short = short_condition & filter_short
+        # One-per-day gate: mirrors Pine's var bool signalActive + isNewDay reset
+        # Detect calendar-day boundaries
+        df["_day"] = pd.to_datetime(df["date"]).dt.normalize()
+        df["_is_new_day"] = df["_day"] != df["_day"].shift(1)
+        df["_day_group"] = df["_is_new_day"].cumsum()
 
-        # ------------------------------------------------------------------
-        # Phase 6: One trade per day (vectorized `var bool signalActive`)
-        #
-        # In Pine: signalActive resets to False on each new day and becomes
-        # True the moment a trade fires, blocking further entries that day.
-        #
-        # Vectorized equivalent:
-        #   - Compute cumulative signal count within each calendar day.
-        #   - "prior signals today" = cumsum − current bar's contribution.
-        #   - Block the bar if prior_signals_today > 0.
-        # ------------------------------------------------------------------
-        date_only = pd.to_datetime(merged_df["date"]).dt.date
-        any_signal = raw_long | raw_short
-        cum_per_day = any_signal.groupby(date_only).cumsum()
-        prior_signals_today = cum_per_day - any_signal.astype(int)
-        signal_blocked = prior_signals_today > 0
+        # Within each day, track whether a signal has already fired on a prior bar
+        df["_any_signal"] = df["_raw_long"] | df["_raw_short"]
+        df["_prev_signal_count"] = df.groupby("_day_group")["_any_signal"].transform(
+            lambda x: x.shift(1).fillna(0).cumsum()
+        )
+        df["_signal_active"] = df["_prev_signal_count"] > 0
 
-        enter_long = (raw_long & ~signal_blocked).fillna(False)
-        enter_short = (raw_short & ~signal_blocked).fillna(False)
+        # Final entry conditions: only first signal of the day passes
+        df["_enter_long"] = df["_raw_long"] & ~df["_signal_active"]
+        df["_enter_short"] = df["_raw_short"] & ~df["_signal_active"]
 
-        # ------------------------------------------------------------------
-        # Phase 7: Emit recommendation for last confirmed bar
-        # ------------------------------------------------------------------
-        if bool(enter_long.iloc[-1]):
+        # --- Evaluate on the last confirmed bar ---
+        last = df.iloc[-1]
+
+        if pd.isna(last["_ema"]) or pd.isna(last.get("resample_720_close", np.nan)):
+            return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
+
+        if last["_enter_long"]:
             return StrategyRecommendation(signal=SignalType.LONG, timestamp=timestamp)
-        elif bool(enter_short.iloc[-1]):
+        if last["_enter_short"]:
             return StrategyRecommendation(signal=SignalType.SHORT, timestamp=timestamp)
 
         return StrategyRecommendation(signal=SignalType.HOLD, timestamp=timestamp)
