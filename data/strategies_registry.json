@@ -88,8 +88,8 @@
     "archived_at": "2026-03-14T19:22:40.295422+00:00"
   },
   "TASC-2026-03-One-Percent-A-Week.pine": {
-    "file_path": "archive\\TASC-2026-03-One-Percent-A-Week.pine",
-    "status": "evaluated",
+    "file_path": "archive\\TASC-2026-03-One-Percent-A-Week\\TASC-2026-03-One-Percent-A-Week.pine",
+    "status": "archived",
     "registered_at": "2026-03-14T14:20:57.446767+00:00",
     "scrape_source": "editors_pick",
     "evaluated_at": "2026-03-14T14:21:20.685233+00:00",
@@ -103,7 +103,9 @@
     "project_score": 3,
     "recommendation_reason": "Strategy is purpose-built for TQQQ (leveraged US equity ETF) and anchors entirely on US stock market session structure: Monday first-bar weekly open, Friday last-bar hard exit, and session.isfirstbar_regular/islastbar_regular guards. BTC trades 24/7 with no such session boundaries, making the core timing logic inapplicable without fundamental redesign. Project fit is moderate — the logic is clean and well-structured, but conversion complexity is high due to limit-order-across-day sequencing, OCA bracket management, and session-aware state machines (sendPT/beSent flags). A Python port would require simulating multi-day pending limit orders and session boundaries, which goes well beyond standard vectorized backtesting. Recommended only if the team wants to explore weekly mean-reversion patterns adapted for crypto (e.g., using Monday UTC open as proxy).",
     "skip_count": 1,
-    "archived_at": "2026-03-21T11:31:54.961578+00:00"
+    "archived_at": "2026-04-05T05:42:32.312169+00:00",
+    "conversion_attempts": 1,
+    "failed_at": "2026-04-05T05:14:24.480860+00:00"
   },
   "zz-shot.pine": {
     "file_path": "archive\\zz-shot.pine",
@@ -233,8 +235,8 @@
     "output_dir": "output\\bjorgum_double_tap\\2026-03-16_08-30-31"
   },
   "Greer-Leap-Self-Optimizing-XGBoost-Approx-Stats.pine": {
-    "file_path": "archive\\Greer-Leap-Self-Optimizing-XGBoost-Approx-Stats.pine",
-    "status": "evaluated",
+    "file_path": "archive\\Greer-Leap-Self-Optimizing-XGBoost-Approx-Stats\\Greer-Leap-Self-Optimizing-XGBoost-Approx-Stats.pine",
+    "status": "completed",
     "registered_at": "2026-03-16T08:29:14.869845+00:00",
     "scrape_source": "popular",
     "evaluated_at": "2026-03-16T08:30:14.590109+00:00",
@@ -247,8 +249,10 @@
     "btc_score": 2,
     "project_score": 2,
     "recommendation_reason": "Script is explicitly marked private/test-only by the author ('Please don't like this'). The regime filter uses `barmerge.lookahead_on` in `request.security`, introducing deliberate forward-looking bias that invalidates backtests. The composite signal logic (weighted rolling correlations as XGBoost approximation) and Kalman filter are technically convertible, but fixing lookahead requires resampling utilities and careful MTF handling. Combined with the private/experimental nature and bias issues, this strategy is not recommended for pipeline conversion.",
-    "skip_count": 1,
-    "archived_at": "2026-03-21T11:31:54.962578+00:00"
+    "skip_count": 2,
+    "archived_at": "2026-04-05T05:42:32.302169+00:00",
+    "converted_at": "2026-04-05T05:42:32.302169+00:00",
+    "output_dir": "output\\greer_leap_self_optimizing_xgboost_approx_stats\\2026-04-05_05-27-36"
   },
   "Machine-Learning-Lorentzian-KNN-Classifier-Update.pine": {
     "file_path": "archive\\Machine-Learning-Lorentzian-KNN-Classifier-Update.pine",
@@ -795,7 +799,7 @@
     "status": "archived",
     "registered_at": "2026-04-02T15:19:50.137587+00:00",
     "scrape_source": "popular",
-    "evaluated_at": "2026-04-04T22:41:17.399499+00:00",
+    "evaluated_at": "2026-04-05T04:58:56.797171+00:00",
     "evaluation_status": "precheck_rejected",
     "pine_metadata": {
       "name": "Sovereign Execution [JOAT]",
@@ -807,9 +811,9 @@
     "btc_score": 0,
     "project_score": 0,
     "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
-    "skip_count": 2,
+    "skip_count": 4,
     "failed_at": "2026-04-02T19:17:33.075197+00:00",
-    "archived_at": "2026-04-04T22:46:02.607929+00:00"
+    "archived_at": "2026-04-05T05:42:32.330171+00:00"
   },
   "BB-RSI-Mean-Reversion-Aggressive-Alerts.pine": {
     "file_path": "input\\BB-RSI-Mean-Reversion-Aggressive-Alerts.pine",
@@ -936,7 +940,7 @@
     "status": "evaluation_failed",
     "registered_at": "2026-04-02T15:56:14.610239+00:00",
     "scrape_source": "popular",
-    "evaluated_at": "2026-04-04T22:41:17.401499+00:00",
+    "evaluated_at": "2026-04-05T05:27:36.109986+00:00",
     "evaluation_status": "read_error",
     "pine_metadata": {
       "name": "ETH-Pro-Strategy-Long-Short-30m-V3-Alerts",
@@ -1075,7 +1079,7 @@
     "status": "evaluation_failed",
     "registered_at": "2026-04-02T16:09:44.888483+00:00",
     "scrape_source": "popular",
-    "evaluated_at": "2026-04-04T22:41:17.404637+00:00",
+    "evaluated_at": "2026-04-05T05:27:36.112035+00:00",
     "evaluation_status": "read_error",
     "pine_metadata": {
       "name": "KFin-Huynh",
@@ -1254,20 +1258,20 @@
     "status": "archived",
     "registered_at": "2026-04-04T22:40:53.210223+00:00",
     "scrape_source": "unknown",
-    "evaluated_at": "2026-04-04T22:41:17.390495+00:00",
-    "evaluation_status": "scored",
+    "evaluated_at": "2026-04-05T05:27:36.108044+00:00",
+    "evaluation_status": "precheck_rejected",
     "pine_metadata": {
       "name": "Quant Pullback Day Trade Strategy",
-      "safe_name": "quant_pullback_day_trade_strategy",
-      "timeframe": "5m",
-      "lookback_bars": 20
+      "safe_name": "Quant_Pullback_Day_Trade_Strategy",
+      "timeframe": "1h",
+      "lookback_bars": 100
     },
-    "category": "Trend",
+    "category": "Other",
     "btc_score": 0,
     "project_score": 0,
-    "recommendation_reason": "Well-structured dual-direction pullback strategy using standard indicators (EMA9/20, RSI, ATR, VWAP, Volume SMA) with no request.security calls, making transpilation straightforward. High project score due to clean entry/exit logic, swing-based stops via ta.lowest/ta.highest, and full parameterization. BTC score is penalized because the session filter (0930-1130, 1300-1530 US hours) is incompatible with 24/7 crypto markets by default, though it can be disabled via useSessionFilter=false. All indicators map directly to TA-Lib or pandas equivalents with no exotic dependencies.",
-    "skip_count": 1,
-    "archived_at": "2026-04-04T22:46:02.612929+00:00"
+    "recommendation_reason": "Rejected before selector: total_trades=36 is below the RL minimum of 150.",
+    "skip_count": 2,
+    "archived_at": "2026-04-05T05:42:32.341171+00:00"
   },
   "Strategy-with-OB-Override-Correlation-Custom-Exits.pine": {
     "file_path": "archive\\Strategy-with-OB-Override-Correlation-Custom-Exits\\Strategy-with-OB-Override-Correlation-Custom-Exits.pine",
@@ -1288,5 +1292,45 @@
     "recommendation_reason": "Rejected before selector: signal logic depends on self-evaluation state via `strategy.equity`.",
     "skip_count": 1,
     "archived_at": "2026-04-04T22:46:02.617060+00:00"
+  },
+  "Gold-DXY-Reversal-Correlation-Strategy-Optimized-LJxV6-2-0.pine": {
+    "file_path": "archive\\Gold-DXY-Reversal-Correlation-Strategy-Optimized-LJxV6-2-0\\Gold-DXY-Reversal-Correlation-Strategy-Optimized-LJxV6-2-0.pine",
+    "status": "archived",
+    "registered_at": "2026-04-05T04:58:56.782093+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-05T04:58:56.800170+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Gold/DXY Reversal Strategy V6",
+      "safe_name": "Gold_DXY_Reversal_Strategy_V6",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=84 is below the RL minimum of 150.",
+    "skip_count": 2,
+    "archived_at": "2026-04-05T05:42:32.359184+00:00"
+  },
+  "PRO-Supertrend-CE-PE-Strategy-Trailing-SL-Strike.pine": {
+    "file_path": "archive\\PRO-Supertrend-CE-PE-Strategy-Trailing-SL-Strike\\PRO-Supertrend-CE-PE-Strategy-Trailing-SL-Strike.pine",
+    "status": "archived",
+    "registered_at": "2026-04-05T04:58:56.782093+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-05T04:59:24.396541+00:00",
+    "evaluation_status": "scored",
+    "pine_metadata": {
+      "name": "PRO Supertrend CE/PE Strategy (Trailing SL + Strike)",
+      "safe_name": "pro_supertrend_ce_pe_strategy_trailing_sl_strike",
+      "timeframe": "any",
+      "lookback_bars": 30
+    },
+    "category": "Trend",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Core Supertrend flip logic is asset-agnostic and transferable to BTC, but the strategy is explicitly designed for Indian equity options (CE/PE, ATM strike rounding, NIFTY/BANKNIFTY step sizes) which are meaningless on BTC spot/futures. The stateful trailing SL (var float with math.max/min updates gated on position_size) is challenging to vectorize without introducing lookahead bias — it requires a bar-by-bar simulation loop rather than a clean vectorized pass. Metrics are mixed: profit_factor of 1.282 and max_drawdown of 13% are acceptable, but a Sharpe of -1.495 is a significant red flag indicating risk-adjusted returns are poor. Convertible but yields a niche, low-alpha signal for the RL engine.",
+    "skip_count": 2,
+    "archived_at": "2026-04-05T05:42:32.361375+00:00"
   }
 }
