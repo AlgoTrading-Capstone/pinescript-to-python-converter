@@ -297,10 +297,14 @@ class TradingViewScraper:
 
     def start_driver(self):
         logger.info("Starting Selenium WebDriver...")
-        self.driver = webdriver.Chrome(
-            service=ChromeService(ChromeDriverManager().install()),
-            options=self.options,
-        )
+        try:
+            service = ChromeService(ChromeDriverManager().install())
+        except Exception as exc:
+            logger.warning(
+                f"ChromeDriverManager failed ({exc}); falling back to system ChromeDriver."
+            )
+            service = ChromeService()  # uses chromedriver from PATH
+        self.driver = webdriver.Chrome(service=service, options=self.options)
         self.driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",
             {"source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"},
