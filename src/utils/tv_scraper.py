@@ -432,9 +432,12 @@ class TradingViewScraper:
         is exhausted (page returns 0 results), or _MAX_PAGES is hit.
         """
         results: list[str] = []
+        # Request enough URLs to absorb the seen_urls overlap and still yield
+        # `target` new ones. Cap at _MAX_PAGES * ~20 items/page ≈ 400.
+        pool_size = min(max(50, target * 10) + len(seen_urls), 400)
         listing_pool = self.fetch_strategy_list(
             page_url=base_url,
-            max_results=max(50, target * 10),
+            max_results=pool_size,
             page=1,
         )
         for url in listing_pool:
