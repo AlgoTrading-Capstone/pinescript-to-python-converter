@@ -942,7 +942,7 @@
     "status": "evaluation_failed",
     "registered_at": "2026-04-02T15:56:14.610239+00:00",
     "scrape_source": "popular",
-    "evaluated_at": "2026-04-06T19:16:55.223564+00:00",
+    "evaluated_at": "2026-04-06T20:09:31.916630+00:00",
     "evaluation_status": "read_error",
     "pine_metadata": {
       "name": "ETH-Pro-Strategy-Long-Short-30m-V3-Alerts",
@@ -1081,7 +1081,7 @@
     "status": "evaluation_failed",
     "registered_at": "2026-04-02T16:09:44.888483+00:00",
     "scrape_source": "popular",
-    "evaluated_at": "2026-04-06T19:16:55.226563+00:00",
+    "evaluated_at": "2026-04-06T20:09:31.919573+00:00",
     "evaluation_status": "read_error",
     "pine_metadata": {
       "name": "KFin-Huynh",
@@ -1746,7 +1746,7 @@
   },
   "MTF-EMA-Engulf-Retest-NQ-1m.pine": {
     "file_path": "archive\\MTF-EMA-Engulf-Retest-NQ-1m\\MTF-EMA-Engulf-Retest-NQ-1m.pine",
-    "status": "evaluated",
+    "status": "completed",
     "registered_at": "2026-04-05T12:16:31.801759+00:00",
     "scrape_source": "popular",
     "evaluated_at": "2026-04-05T12:17:26.184111+00:00",
@@ -1761,10 +1761,12 @@
     "btc_score": 4,
     "project_score": 5,
     "recommendation_reason": "Weak live metrics (PF 1.128, Sharpe 0.425) limit BTC score despite 924 trades providing statistical weight. Project score is elevated by high transpilation complexity: 8 MTF request.security calls across 4 higher timeframes requiring resampling utilities, a multi-state machine (watching/bull_mode/bars_since/signal_low/signal_high) with expiry and invalidation branches, engulfing candle pattern detection, and EMA cloud (max/min band) logic. NQ-specific fixed-point SL/TP reduces general applicability. Worth converting to exercise MTF resampling and bar-indexed state tracking patterns.",
-    "skip_count": 2,
+    "skip_count": 3,
     "conversion_attempts": 1,
     "failed_at": "2026-04-06T08:37:02.973794+00:00",
-    "archived_at": "2026-04-06T18:07:56.176163+00:00"
+    "archived_at": "2026-04-06T20:20:45.639837+00:00",
+    "converted_at": "2026-04-06T20:20:45.639837+00:00",
+    "output_dir": "output\\mtf_ema_engulf_retest_nq_1m\\2026-04-06_20-09-31"
   },
   "voidflow-short-engine.pine": {
     "file_path": "archive\\voidflow-short-engine\\voidflow-short-engine.pine",
@@ -1991,7 +1993,7 @@
   },
   "AI-MES-Structure-Break-Strategy.pine": {
     "file_path": "input\\AI-MES-Structure-Break-Strategy.pine",
-    "status": "evaluated",
+    "status": "archived",
     "registered_at": "2026-04-06T19:16:30.344523+00:00",
     "scrape_source": "popular",
     "evaluated_at": "2026-04-06T19:16:30.360518+00:00",
@@ -2006,7 +2008,8 @@
     "btc_score": 0,
     "project_score": 0,
     "recommendation_reason": "Rejected before selector: total_trades=127 is below the RL minimum of 150.",
-    "skip_count": 1
+    "skip_count": 3,
+    "archived_at": "2026-04-06T20:20:45.658474+00:00"
   },
   "CDV-EMA-Cross-Strategy-v6.pine": {
     "file_path": "input\\CDV-EMA-Cross-Strategy-v6.pine",
@@ -2030,7 +2033,7 @@
   },
   "SPXL-Buy-The-Panic-VIX.pine": {
     "file_path": "input\\SPXL-Buy-The-Panic-VIX.pine",
-    "status": "evaluated",
+    "status": "archived",
     "registered_at": "2026-04-06T19:16:30.344523+00:00",
     "scrape_source": "popular",
     "evaluated_at": "2026-04-06T19:16:55.221565+00:00",
@@ -2045,6 +2048,105 @@
     "btc_score": 0,
     "project_score": 0,
     "recommendation_reason": "Rejected before selector: total_trades=14 is below the RL minimum of 150.",
-    "skip_count": 1
+    "skip_count": 3,
+    "archived_at": "2026-04-06T20:20:45.658474+00:00"
+  },
+  "Gold-MTF.pine": {
+    "file_path": "input\\Gold-MTF.pine",
+    "status": "selected",
+    "registered_at": "2026-04-06T20:00:41.795886+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-06T20:01:09.618099+00:00",
+    "evaluation_status": "scored",
+    "pine_metadata": {
+      "name": "Gold MTF Dashboard FINAL NO ERROR",
+      "safe_name": "gold_mtf_dashboard",
+      "timeframe": "1m",
+      "lookback_bars": 20
+    },
+    "category": "Multi-Timeframe Trend Breakout",
+    "btc_score": 5,
+    "project_score": 5,
+    "recommendation_reason": "Solid MTF architecture (1/3/5min) with EMA trend, S/R breakout, volume filter, and ATR-based risk management — all mappable to our resampling utilities and BaseStrategy contract. However, backtest metrics are weak (PF 1.195, Sharpe 0.233), and the strategy fires three independent concurrent trade tracks (TF1/TF2/TF3) with dynamic bar_index entry labels, which adds transpilation complexity for the RL feature extractor. The [1] shifts on MTF S/R series also require careful lookahead auditing via resample_to_interval/resampled_merge. Designed for Gold XAUUSD scalping so BTC fit is moderate. Convertible but not a high-priority pick given marginal edge in the backtest data."
+  },
+  "London-NZ-Sweep-FVG-HTF-FILTER.pine": {
+    "file_path": "archive\\London-NZ-Sweep-FVG-HTF-FILTER\\London-NZ-Sweep-FVG-HTF-FILTER.pine",
+    "status": "archived",
+    "registered_at": "2026-04-06T20:00:41.795886+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-06T20:01:09.623199+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "London NZ Sweep + FVG (HTF FILTER)",
+      "safe_name": "London_NZ_Sweep___FVG__HTF_FILTER",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=2 is below the RL minimum of 150.",
+    "skip_count": 2,
+    "archived_at": "2026-04-06T20:20:45.663470+00:00"
+  },
+  "Megacap-Tech-Channel-Index-Scott-Master-v4-9.pine": {
+    "file_path": "archive\\Megacap-Tech-Channel-Index-Scott-Master-v4-9\\Megacap-Tech-Channel-Index-Scott-Master-v4-9.pine",
+    "status": "archived",
+    "registered_at": "2026-04-06T20:00:41.795886+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-06T20:01:09.626182+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Megacap Tech Channel & Index [Scott Master v4.91]",
+      "safe_name": "Megacap_Tech_Channel___Index__Scott_Master_v4_91",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: signal logic depends on self-evaluation state via `strategy.equity`.",
+    "skip_count": 2,
+    "archived_at": "2026-04-06T20:20:45.666470+00:00"
+  },
+  "FibSniper-Pro-SMC-Edition.pine": {
+    "file_path": "archive\\FibSniper-Pro-SMC-Edition\\FibSniper-Pro-SMC-Edition.pine",
+    "status": "archived",
+    "registered_at": "2026-04-06T20:09:31.886488+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-06T20:09:31.910502+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "FibSniper-Pro-SMC-Edition",
+      "safe_name": "FibSniper_Pro_SMC_Edition",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=48 is below the RL minimum of 150.",
+    "skip_count": 1,
+    "archived_at": "2026-04-06T20:20:45.670470+00:00"
+  },
+  "PRO-Investing-Nasdaq-Silver-Bullet-Strategy-1hr.pine": {
+    "file_path": "archive\\PRO-Investing-Nasdaq-Silver-Bullet-Strategy-1hr\\PRO-Investing-Nasdaq-Silver-Bullet-Strategy-1hr.pine",
+    "status": "archived",
+    "registered_at": "2026-04-06T20:09:31.886488+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-06T20:09:31.913567+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "PRO Investing - Nasdaq Silver Bullet (%) Strategy (1hr)",
+      "safe_name": "PRO_Investing___Nasdaq_Silver_Bullet_____Strategy__1hr",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
+    "skip_count": 1,
+    "archived_at": "2026-04-06T20:20:45.673471+00:00"
   }
 }

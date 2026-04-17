@@ -21,6 +21,7 @@ from src.pipeline import (
     TARGET_STRATEGY_COUNT,
     _EXCLUDED_PINE_FILES,
 )
+from src.evaluation.loader import StrategyLoadError, load_strategy_by_safe_name
 from src.pipeline.archiver import archive_remaining, archive_strategy_bundle
 from src.pipeline.category_counts import increment_category_count
 from src.pipeline.claude_cli import get_claude_cli_path
@@ -30,6 +31,7 @@ from src.pipeline.pr_sync import sync_pr_closure_to_registry
 from src.pipeline.registry import _now_iso, load_registry, save_registry, scan_and_register
 from src.pipeline.scraper import run_tv_scraper
 from src.pipeline.selector import auto_select_strategy
+from src.pipeline.statistical_gate import run_statistical_gate
 from src.pipeline.ui import print_banner, print_error, print_info, print_section, print_success, print_warning
 
 
@@ -123,6 +125,8 @@ def main() -> None:
 
     print_section("Conversion")
     success, run_dir = run_orchestrator(Path(chosen_rec["file_path"]), meta, out_dir)
+    gate_result = None
+    gate_rejected = False
 
     if success:
         pine_file = Path(chosen_rec["file_path"])
@@ -132,6 +136,45 @@ def main() -> None:
         if not verify_artifacts(safe_name, out_dir):
             logger.error("Token indicated success but artifacts are missing.")
             success = False
+
+    if success:
+        # Step 4b — Statistical Gate (variance + win-rate on real BTC data).
+        # A dead-on-data strategy is terminal ('statistically_rejected') and does
+        # NOT consume a conversion attempt — the code was correct, the strategy
+        # was just unprofitable. A loader crash or gate exception is a real
+        # failure and falls through to the failed-retry path below.
+        print_section("Statistical Gate")
+        try:
+            strategy = load_strategy_by_safe_name(safe_name)
+            gate_result = run_statistical_gate(strategy, out_dir)
+        except StrategyLoadError as e:
+            logger.error(f"Could not load strategy '{safe_name}' for gate: {e}")
+            print_error(f"Strategy loader failed: {e}")
+            success = False
+        except Exception as e:
+            logger.exception(f"Statistical gate crashed for '{safe_name}': {e}")
+            print_error(f"Statistical gate crashed: {e}")
+            success = False
+
+        if gate_result is not None and not gate_result.passed:
+            print_warning(f"Strategy rejected by statistical gate: {gate_result.reason}")
+            registry[chosen_key].update({
+                "status":       "statistically_rejected",
+                "rejected_at":  _now_iso(),
+                "output_dir":   str(out_dir),
+                "evaluation":   gate_result.to_registry_block(),
+            })
+            save_registry(registry)
+            print_info(f"Eval artifacts -> {out_dir / 'eval'}")
+            gate_rejected = True
+            success = False
+        elif gate_result is not None and gate_result.passed:
+            print_success(
+                f"Statistical gate PASSED — "
+                f"activity={gate_result.variance.get('signal_activity_pct', 0):.1%}, "
+                f"winrate={gate_result.winrate.get('win_rate', 0):.1%} "
+                f"over {gate_result.winrate.get('total_trades', 0)} trades"
+            )
 
     if success:
         pine_src = Path(chosen_rec["file_path"])
@@ -145,11 +188,18 @@ def main() -> None:
             "archived_at":  _now_iso(),
             "output_dir":   str(out_dir),
             "file_path":    new_file_path,
+            "evaluation":   gate_result.to_registry_block() if gate_result else {},
         })
         increment_category_count(registry[chosen_key].get("category"))
         save_registry(registry)
         print_success("Conversion complete!")
         print_info(f"Artifacts -> {out_dir}")
+    elif gate_rejected:
+        # Terminal: dead-on-data. Skip archive + PR. Do not retry.
+        end_time = datetime.now(UTC)
+        print_info(f"Pipeline ended at {end_time.strftime('%Y-%m-%d %H:%M:%S')} UTC")
+        print_info(f"Pipeline took {(end_time - start_time).total_seconds():.1f} seconds")
+        sys.exit(0)
     else:
         rec = registry[chosen_key]
         rec["conversion_attempts"] = rec.get("conversion_attempts", 0) + 1
