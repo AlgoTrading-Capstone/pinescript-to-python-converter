@@ -1,32 +1,81 @@
 ---
 name: validation-checklist
-description: The ultimate gatekeeper checklist for the Validator Agent. Automatically load this skill WHENEVER reviewing, validating, or approving a generated Python strategy. Enforces strict CI/CD constraints (file naming), RL safety (dynamic MIN_CANDLES_REQUIRED, no np.roll, strictly causal vectorization), and BaseStrategy contract compliance before allowing the code to proceed to the Test Generation phase.
+description: The ultimate gatekeeper checklist for the Validator Agent. Automatically load this skill WHENEVER reviewing, validating, or approving a generated Python strategy. Enforces strict CI/CD constraints (file naming), RL safety (dynamic MIN_CANDLES_REQUIRED, no np.roll, strictly causal vectorization), BOTH abstract methods (generate_all_signals + step), and the statistical-gate signal contract before allowing the code to proceed to the Test Generation phase.
 ---
 
 # Validation Checklist
 
-The Validator Agent MUST verify the generated Python strategy against this exact checklist. If ANY check fails, the validation process is considered FAILED.
+The Validator Agent MUST verify the generated Python strategy against this
+exact checklist. If ANY check fails, validation is FAILED.
 
-## 1. Syntax & Imports Validation
+## 1. Syntax & Imports
 - [ ] Code is valid Python 3.11+.
 - [ ] No syntax errors or unresolved references.
-- [ ] All necessary imports are present (e.g., `pandas`, `datetime`, `talib`).
-- [ ] **Type Safety:** If `talib` moving averages are used, `from talib import MA_Type` MUST be imported and utilized (e.g., `matype=MA_Type.SMA`), never raw integers like `0`.
+- [ ] All necessary imports present (`numpy`, `pandas`, `talib` if used,
+      `from src.base_strategy import BaseStrategy, SignalType`).
+- [ ] **Type Safety:** if `talib` moving averages are used,
+      `from talib import MA_Type` MUST be imported and used
+      (e.g., `matype=MA_Type.SMA`), never raw integers like `0`.
 
-## 2. Contract Compliance
-- [ ] The class inherits correctly from `BaseStrategy`.
-- [ ] The `__init__` method explicitly calls `super().__init__(...)` with `name`, `description`, `timeframe` (STRICTLY lowercase, e.g., "15m"), and `lookback_hours`.
-- [ ] **Dynamic RL Warmup:** The `__init__` method MUST dynamically compute `self.MIN_CANDLES_REQUIRED` based on the strategy's parameters (e.g., `3 * max(param1, param2)`). Static class-level constants are a FAIL.
-- [ ] The `run(self, df: pd.DataFrame, timestamp: datetime) -> StrategyRecommendation` method is implemented with the exact signature.
-- [ ] The `run` method guards execution with: `if len(df) < self.MIN_CANDLES_REQUIRED:` returning a `HOLD` signal if true.
-- [ ] The return value of `run` is strictly a `StrategyRecommendation` object using a valid `SignalType` enum (`LONG`, `SHORT`, `FLAT`, or `HOLD`).
+## 2. Contract Compliance — BOTH Abstract Methods
+The class CANNOT be instantiated unless both are implemented. The statistical
+gate's loader (`src/evaluation/loader.py`) will reject the strategy with
+`TypeError: Can't instantiate abstract class ...` if either is missing.
 
-## 3. Semantic & Trading Logic Validation
-- [ ] **No Lookahead Bias:** The strategy must NEVER access future data. When processing the current row `i` or timestamp `t`, the strategy must only use data from index `<= i`. Shifts or rolling windows must be strictly backward-looking.
-- [ ] Logic precisely matches the original PineScript intent (e.g., condition thresholds, crossover directions) but uses **vectorized Operations** (Pandas/TA-Lib) instead of iterative loops wherever mathematically possible.
-- [ ] **Multi-Timeframe Handling:** If the strategy fetches data from a higher timeframe (like `request.security` in PineScript), it MUST import and use `resample_to_interval` and `resampled_merge` from `src.utils.resampling`. Custom or manual pandas resampling logic (`df.resample()`) inside the strategy class is strictly FORBIDDEN to prevent lookahead bias.
-- [ ] **No Fake State:** If the original Pine Script used cooldown or position-size-based conditions, the Python code must NOT use indicator proxies (e.g., "crossover N bars ago") to simulate them. The condition must be REMOVED entirely, with a docstring note. Our RL engine handles dynamic risk allocation.
-- [ ] **Exit logic disclosure:** If the original Pine Script had significant exit management (dynamic SL, ATR TP, breakeven stops), the Python docstring MUST explicitly state that exit logic was not converted and must be configured in the execution layer. A silent omission without a docstring warning is a FAIL.
-- [ ] **No `np.roll` shifts:** The strategy must NOT use `np.roll()` to shift time-series data. Use `pd.Series.diff()` or `pd.Series.shift()` instead. `np.roll` wraps the last element to index 0, causing a silent lookahead artifact on bar 0.
-- [ ] **CI/CD File Naming (Strategy):** The strategy source file MUST be named `{safe_name}_strategy.py` (e.g., `rsi_divergence_strategy.py`). A generic name or a missing `_strategy` suffix is a FAIL — reject and ask the Orchestrator to re-invoke the Transpiler to rename the file.
-- [ ] **CI/CD File Naming (Test) — PROSPECTIVE INSTRUCTION FOR TEST GENERATOR:** The Validator cannot check the test file at this stage because it does not exist yet. This check is a forward-looking instruction: when the Test Generator Agent creates the file, it MUST be named `test_{safe_name}_strategy.py` (e.g., `test_rsi_divergence_strategy.py`). The `test_` prefix AND `_strategy` suffix are both mandatory. The suffix-only format `{safe_name}_strategy_test.py` is a FAIL — pytest discovery will miss it. **Validator: skip this check; Test Generator: enforce it.**
+- [ ] Class inherits from `BaseStrategy`.
+- [ ] `__init__` calls `super().__init__(name, description, timeframe, lookback_hours)`
+      with `timeframe` STRICTLY lowercase (`"15m"`, `"1h"`, `"4h"`, `"1d"`).
+- [ ] `__init__` sets `self.MIN_CANDLES_REQUIRED` DYNAMICALLY from the indicator
+      periods (e.g., `3 * max(self.fast_period, self.slow_period)`). Static
+      class-level constants are a FAIL.
+- [ ] `__init__` initialises any rolling/streaming state used by `step`
+      (e.g., `self._observed = 0`, `self._fast_ema = None`).
+
+### 2a. `generate_all_signals(self, df: pd.DataFrame) -> pd.Series`
+- [ ] Method exists with this exact signature.
+- [ ] Returns a `pd.Series` whose length AND index match the input `df`.
+- [ ] Series values are STRINGS in `{"LONG", "SHORT", "FLAT", "HOLD"}` —
+      NOT `SignalType` enum members.
+- [ ] First `self.MIN_CANDLES_REQUIRED` rows are ALL `"FLAT"` (warmup contract).
+- [ ] Implementation is fully vectorized — NO Python `for` loop over `df` rows.
+      The runner enforces a 60s wall-clock limit; row loops will trip it.
+
+### 2b. `step(self, candle: pd.Series) -> SignalType`
+- [ ] Method exists with this exact signature.
+- [ ] Returns a `SignalType` enum member (`SignalType.LONG`,
+      `SignalType.SHORT`, `SignalType.FLAT`, `SignalType.HOLD`) —
+      NOT a raw string.
+- [ ] Cold-start safe: returns `SignalType.FLAT` while
+      `self._observed < self.MIN_CANDLES_REQUIRED`.
+- [ ] Updates internal accumulators incrementally — never recomputes
+      indicators by reading prior history from `candle`.
+
+## 3. Semantic & Trading Logic
+- [ ] **No Lookahead Bias:** every operation is strictly backward-looking.
+      `shift(+n)`, rolling/expanding/ewm windows, `cummax`/`cummin` allowed.
+      `shift(-n)`, future-indexed slices, `np.roll` are FAILs.
+- [ ] **No `np.roll`:** banned outright — it wraps the array tail to index 0,
+      which silently leaks future data on bar 0. Use `pd.Series.shift(+n)`.
+- [ ] **MTF data:** if the source uses `request.security`, the strategy MUST
+      import and use `resample_to_interval` and `resampled_merge` from
+      `src.utils.resampling`. Custom or raw `df.resample(...)` is FORBIDDEN.
+- [ ] Trading logic matches the original PineScript intent (thresholds,
+      crossover directions, etc.) but rewritten as vectorized Pandas/TA-Lib.
+- [ ] **No fake state:** if Pine used cooldown / position-size conditions,
+      the Python code must NOT fake them with indicator proxies. Remove the
+      condition entirely and add a docstring note. Risk allocation is the
+      RL engine's job.
+- [ ] **Exit-logic disclosure:** if Pine had non-trivial exit management
+      (dynamic SL, ATR TP, breakeven), the docstring MUST state that exit
+      logic was not converted and is delegated to the execution layer.
+      A silent omission is a FAIL.
+
+## 4. CI/CD & Naming
+- [ ] **Strategy file:** `src/strategies/{safe_name}_strategy.py` —
+      missing `_strategy` suffix is a FAIL; the Orchestrator must re-invoke
+      the Transpiler to rename.
+- [ ] **Test file (forward-looking instruction for Test Generator):**
+      `tests/strategies/test_{safe_name}_strategy.py`. The `test_` prefix AND
+      `_strategy` suffix are both mandatory. The suffix-only form
+      `{safe_name}_strategy_test.py` is a FAIL — pytest discovery will miss it.
+      The Validator skips this check; the Test Generator enforces it.

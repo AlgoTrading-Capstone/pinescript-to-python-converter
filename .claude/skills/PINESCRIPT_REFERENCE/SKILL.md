@@ -552,32 +552,38 @@ These Pine functions operate over a rolling window of a series — they are NOT 
 
 ### 5.1 Core Mapping
 
-In our system, Pine strategy commands translate to returning a `StrategyRecommendation` from the `run()` method.
+In our system, every Pine `strategy.*` action collapses to one of four
+signal labels. Both the batch method (`generate_all_signals`, returns string)
+and the streaming method (`step`, returns `SignalType` enum) emit them.
 
 **Required imports:**
 ```python
-from datetime import datetime
+import numpy as np
 import pandas as pd
-from src.base_strategy import BaseStrategy, StrategyRecommendation, SignalType
+from src.base_strategy import BaseStrategy, SignalType
 ```
 
-| Pine Script | Python Equivalent |
-|---|---|
-| `strategy.entry("Long", strategy.long)` | `return StrategyRecommendation(SignalType.LONG, timestamp)` |
-| `strategy.entry("Short", strategy.short)` | `return StrategyRecommendation(SignalType.SHORT, timestamp)` |
-| `strategy.close("Long")` | `return StrategyRecommendation(SignalType.FLAT, timestamp)` |
-| `strategy.close("Short")` | `return StrategyRecommendation(SignalType.FLAT, timestamp)` |
-| `strategy.close_all()` | `return StrategyRecommendation(SignalType.FLAT, timestamp)` |
-| No entry/exit condition met | `return StrategyRecommendation(SignalType.HOLD, timestamp)` |
+| Pine Script | Batch label (`generate_all_signals`) | Streaming return (`step`) |
+|---|---|---|
+| `strategy.entry("Long", strategy.long)`   | `"LONG"`  | `SignalType.LONG`  |
+| `strategy.entry("Short", strategy.short)` | `"SHORT"` | `SignalType.SHORT` |
+| `strategy.close("Long" / "Short")`        | `"FLAT"`  | `SignalType.FLAT`  |
+| `strategy.close_all()`                    | `"FLAT"`  | `SignalType.FLAT`  |
+| No entry/exit condition met               | `"FLAT"`  | `SignalType.FLAT`  |
+
+`"HOLD"` is reserved for "no opinion / keep current exposure" and is rarely
+needed when converting Pine — Pine implicitly flattens when no entry fires,
+so `"FLAT"` is almost always the correct default.
 
 ### 5.2 Signal Priority
 
-When a Pine strategy has both entry and exit conditions on the same bar, follow this priority:
+When a Pine strategy has both entry and exit conditions on the same bar,
+apply this priority (same in both modes):
 
-1. If an **exit** condition is met, return `SignalType.FLAT`.
-2. If a **long entry** condition is met, return `SignalType.LONG`.
-3. If a **short entry** condition is met, return `SignalType.SHORT`.
-4. Otherwise, return `SignalType.HOLD`.
+1. If an **exit** condition is met → `FLAT`.
+2. If a **long entry** condition is met → `LONG`.
+3. If a **short entry** condition is met → `SHORT`.
+4. Otherwise → `FLAT`.
 
 ### 5.3 Items to Ignore
 
@@ -635,14 +641,17 @@ df = resampled_merge(original=df, resampled=resampled_df, fill_na=True)
 ### 5.5 Full Strategy Template
 
 **CRITICAL:** The filename MUST end with `_strategy.py` (e.g., `my_converted_strategy.py`).
+**CRITICAL:** The class MUST implement BOTH abstract methods —
+`generate_all_signals` (batch / vectorized, used by the statistical gate) AND
+`step` (live / streaming, used by the production trading loop). A class that
+implements only one cannot be instantiated.
 
 ```python
-from datetime import datetime
 import numpy as np
 import pandas as pd
 import talib
 from talib import MA_Type
-from src.base_strategy import BaseStrategy, StrategyRecommendation, SignalType
+from src.base_strategy import BaseStrategy, SignalType
 
 
 class MyConvertedStrategy(BaseStrategy):
@@ -654,35 +663,67 @@ class MyConvertedStrategy(BaseStrategy):
             timeframe="15m",
             lookback_hours=48,
         )
-        
-        # CRITICAL RL GUARD: Calculate dynamic warmup period based on max indicator length
+
+        # Indicator periods (extracted from the Pine inputs)
         self.fast_period = 10
         self.slow_period = 30
+
+        # CRITICAL RL GUARD: dynamic warmup, derived from the indicator periods.
+        # Static class-level constants are FORBIDDEN.
         self.MIN_CANDLES_REQUIRED = 3 * max(self.fast_period, self.slow_period)
 
-    def run(self, df: pd.DataFrame, timestamp: datetime) -> StrategyRecommendation:
-        # --- CRITICAL RL GUARD ---
-        if len(df) < self.MIN_CANDLES_REQUIRED:
-            return StrategyRecommendation(SignalType.HOLD, timestamp, confidence=0.0)
-    
-        # --- Indicator calculations ---
-        df['sma_fast'] = talib.SMA(df['close'].values, timeperiod=self.fast_period)
-        df['sma_slow'] = talib.SMA(df['close'].values, timeperiod=self.slow_period)
+        # Streaming-mode rolling state (consumed by step())
+        self._observed = 0
+        self._fast_ema = None
+        self._slow_ema = None
+        self._prev_fast_above_slow = None
 
-        # --- Get the last complete bar ---
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+    # ---- BATCH MODE (statistical gate / backtests) -----------------------
+    def generate_all_signals(self, df: pd.DataFrame) -> pd.Series:
+        n = len(df)
+        signals = pd.Series(["FLAT"] * n, index=df.index, dtype=object)
+        if n < self.MIN_CANDLES_REQUIRED:
+            return signals  # warmup → all FLAT (gate enforces this)
 
-        # --- Entry / exit conditions ---
-        long_entry  = last['sma_fast'] > last['sma_slow'] and prev['sma_fast'] <= prev['sma_slow']
-        short_entry = last['sma_fast'] < last['sma_slow'] and prev['sma_fast'] >= prev['sma_slow']
+        sma_fast = talib.SMA(df["close"].to_numpy(dtype=float), timeperiod=self.fast_period)
+        sma_slow = talib.SMA(df["close"].to_numpy(dtype=float), timeperiod=self.slow_period)
+        fast_above = pd.Series(sma_fast > sma_slow, index=df.index)
+        long_entry  = fast_above & ~fast_above.shift(1).fillna(False)
+        short_entry = ~fast_above & fast_above.shift(1).fillna(False)
 
-        if long_entry:
-            return StrategyRecommendation(SignalType.LONG, timestamp)
-        elif short_entry:
-            return StrategyRecommendation(SignalType.SHORT, timestamp)
+        signals = pd.Series(
+            np.where(long_entry,  "LONG",
+            np.where(short_entry, "SHORT", "FLAT")),
+            index=df.index, dtype=object,
+        )
+        signals.iloc[: self.MIN_CANDLES_REQUIRED] = "FLAT"
+        return signals
 
-        return StrategyRecommendation(SignalType.HOLD, timestamp)
+    # ---- STREAMING MODE (live trading loop) ------------------------------
+    def step(self, candle: pd.Series) -> SignalType:
+        close = float(candle["close"])
+        self._observed += 1
+
+        alpha_fast = 2 / (self.fast_period + 1)
+        alpha_slow = 2 / (self.slow_period + 1)
+        self._fast_ema = close if self._fast_ema is None else (
+            alpha_fast * close + (1 - alpha_fast) * self._fast_ema
+        )
+        self._slow_ema = close if self._slow_ema is None else (
+            alpha_slow * close + (1 - alpha_slow) * self._slow_ema
+        )
+
+        if self._observed < self.MIN_CANDLES_REQUIRED:
+            return SignalType.FLAT
+
+        fast_above = self._fast_ema > self._slow_ema
+        crossed_up   = self._prev_fast_above_slow is False and fast_above
+        crossed_down = self._prev_fast_above_slow is True  and not fast_above
+        self._prev_fast_above_slow = fast_above
+
+        if crossed_up:   return SignalType.LONG
+        if crossed_down: return SignalType.SHORT
+        return SignalType.FLAT
 ```
 
 ---
@@ -725,17 +766,21 @@ choices = [-1, 1]
 df['signal'] = np.select(conditions, choices, default=0)
 ```
 
-### 6.2 Scalar Conditionals (Last Bar Only)
+### 6.2 Scalar Conditionals (Streaming Mode Only)
 
-When conditions apply only to the latest bar (inside `run()` for signal generation), standard Python `if/elif/else` is correct:
+`generate_all_signals` is fully vectorized — never branch on `df.iloc[-1]`
+inside it. Last-bar conditionals only appear inside `step(candle)`, where
+the strategy reasons about a single new bar:
 
 ```python
-last = df.iloc[-1]
-if last['rsi'] > 70:
-    return StrategyRecommendation(SignalType.SHORT, timestamp)
-elif last['rsi'] < 30:
-    return StrategyRecommendation(SignalType.LONG, timestamp)
-return StrategyRecommendation(SignalType.HOLD, timestamp)
+def step(self, candle: pd.Series) -> SignalType:
+    self._observed += 1
+    self._update_rsi(float(candle["close"]))   # incremental RSI update
+    if self._observed < self.MIN_CANDLES_REQUIRED:
+        return SignalType.FLAT
+    if self._rsi > 70: return SignalType.SHORT
+    if self._rsi < 30: return SignalType.LONG
+    return SignalType.FLAT
 ```
 
 ### 6.3 Loops
@@ -790,9 +835,9 @@ df['result'] = np.select([condition1, condition2], [value1, value2], default=def
 | RMA | `ta.rma(close, 14)` | `df['close'].ewm(alpha=1/14, adjust=False).mean()` |
 | ATR | `ta.atr(14)` | `talib.ATR(high, low, close, 14)` |
 | Crossover | `ta.crossover(a, b)` | `(a > b) & (a.shift(1) <= b.shift(1))` |
-| Go Long | `strategy.entry("L", strategy.long)` | `StrategyRecommendation(SignalType.LONG, ts)` |
-| Go Short | `strategy.entry("S", strategy.short)` | `StrategyRecommendation(SignalType.SHORT, ts)` |
-| Close position | `strategy.close_all()` | `StrategyRecommendation(SignalType.FLAT, ts)` |
+| Go Long | `strategy.entry("L", strategy.long)` | batch: `"LONG"` / step: `SignalType.LONG` |
+| Go Short | `strategy.entry("S", strategy.short)` | batch: `"SHORT"` / step: `SignalType.SHORT` |
+| Close position | `strategy.close_all()` | batch: `"FLAT"` / step: `SignalType.FLAT` |
 | Higher TF data | `request.security(sym, "240", close)` | `resample_to_interval(df, "4h")` + `resampled_merge(...)` |
 | Conditional (series) | `x > y ? a : b` | `np.where(x > y, a, b)` |
 ```

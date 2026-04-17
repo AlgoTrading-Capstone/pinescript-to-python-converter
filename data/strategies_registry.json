@@ -273,22 +273,6 @@
     "recommendation_reason": "Evaluation failed ג€” scored 0.",
     "archived_at": "2026-03-16T11:50:44.573661+00:00"
   },
-  "AI-Brain-RSI-Structure-Tracker.pine": {
-    "file_path": "input\\AI-Brain-RSI-Structure-Tracker.pine",
-    "status": "selected",
-    "registered_at": "2026-03-17T13:52:46.795055+00:00",
-    "scrape_source": "popular",
-    "evaluated_at": "2026-03-17T13:53:02.567669+00:00",
-    "pine_metadata": {
-      "name": "AI Brain: RSI + Structure Tracker",
-      "safe_name": "ai_brain_rsi_structure_tracker",
-      "timeframe": "15m",
-      "lookback_bars": 200
-    },
-    "btc_score": 4,
-    "project_score": 3,
-    "recommendation_reason": "Solid multi-condition strategy combining RSI crossovers, SMA trend filter (50/200), and market structure (HH/HL/LL/LH via pivot points) with ATR-based dynamic exits. BTC score is high because RSI+SMA200 trend filtering works well on BTC's trending nature, and the 3:1 ATR TP:SL ratio is reasonable. Project score is moderate: the pivot-based structure detection introduces lookahead bias risk (ta.pivothigh uses future bars by design in Pine ג€” offset by structLookback), which requires careful handling during conversion. The label drawing code is purely visual and can be dropped. The trendState stateful variable updated by pivot logic is the main complexity; it must be correctly reconstructed in pandas using a rolling pivot detection approach. No exotic indicators ג€” RSI, SMA, ATR are all standard TA-Lib. Overall a good candidate but requires careful anti-lookahead handling for the pivot logic."
-  },
   "Template-Trailing-Strategy-Backtester.pine": {
     "file_path": "archive\\Template-Trailing-Strategy-Backtester.pine",
     "status": "archived",
@@ -937,25 +921,6 @@
     "skip_count": 4,
     "archived_at": "2026-04-04T22:46:02.607929+00:00"
   },
-  "ETH-Pro-Strategy-Long-Short-30m-V3-Alerts.pine": {
-    "file_path": "input\\ETH-Pro-Strategy-Long-Short-30m-V3-Alerts.pine",
-    "status": "evaluation_failed",
-    "registered_at": "2026-04-02T15:56:14.610239+00:00",
-    "scrape_source": "popular",
-    "evaluated_at": "2026-04-06T20:09:31.916630+00:00",
-    "evaluation_status": "read_error",
-    "pine_metadata": {
-      "name": "ETH-Pro-Strategy-Long-Short-30m-V3-Alerts",
-      "safe_name": "ETH_Pro_Strategy_Long_Short_30m_V3_Alerts",
-      "timeframe": "1h",
-      "lookback_bars": 100
-    },
-    "category": "Other",
-    "btc_score": 0,
-    "project_score": 0,
-    "recommendation_reason": "Could not read ETH-Pro-Strategy-Long-Short-30m-V3-Alerts.pine: [Errno 2] No such file or directory: 'input\\\\ETH-Pro-Strategy-Long-Short-30m-V3-Alerts.pine'",
-    "skip_count": 1
-  },
   "Grover-Llorens-Activator-Strategy-Analysis.pine": {
     "file_path": "input\\Grover-Llorens-Activator-Strategy-Analysis.pine",
     "status": "archived",
@@ -1075,25 +1040,6 @@
     "recommendation_reason": "Rejected before selector: total_trades=19 is below the RL minimum of 150.",
     "skip_count": 4,
     "archived_at": "2026-04-04T22:46:02.607929+00:00"
-  },
-  "KFin-Huynh.pine": {
-    "file_path": "input\\KFin-Huynh.pine",
-    "status": "evaluation_failed",
-    "registered_at": "2026-04-02T16:09:44.888483+00:00",
-    "scrape_source": "popular",
-    "evaluated_at": "2026-04-06T20:09:31.919573+00:00",
-    "evaluation_status": "read_error",
-    "pine_metadata": {
-      "name": "KFin-Huynh",
-      "safe_name": "KFin_Huynh",
-      "timeframe": "1h",
-      "lookback_bars": 100
-    },
-    "category": "Other",
-    "btc_score": 0,
-    "project_score": 0,
-    "recommendation_reason": "Could not read KFin-Huynh.pine: [Errno 2] No such file or directory: 'input\\\\KFin-Huynh.pine'",
-    "skip_count": 1
   },
   "Multi-Module-ICT-Strategy-Engine.pine": {
     "file_path": "input\\Multi-Module-ICT-Strategy-Engine.pine",
@@ -2053,7 +1999,7 @@
   },
   "Gold-MTF.pine": {
     "file_path": "input\\Gold-MTF.pine",
-    "status": "selected",
+    "status": "new",
     "registered_at": "2026-04-06T20:00:41.795886+00:00",
     "scrape_source": "popular",
     "evaluated_at": "2026-04-06T20:01:09.618099+00:00",
