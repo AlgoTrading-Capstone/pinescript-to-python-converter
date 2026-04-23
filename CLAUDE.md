@@ -69,18 +69,35 @@ fetch. `matplotlib` and `pyarrow` are required by the gate
 ## Pipeline Flow (High Level)
 `main.py` is the single entry point orchestrating these phases:
 1. **Scrape:** Auto-downloads public strategies via Selenium if `input/`
-   has fewer than `TARGET_STRATEGY_COUNT` `.pine` files.
+   has fewer than `TARGET_STRATEGY_COUNT` `.pine` files. The scraper draws
+   from a named `SOURCE_URLS` catalogue in `src/utils/tv_scraper.py`
+   (crypto_recent, cryptotrading, popular, editors_pick — crypto sources
+   first so cross-source dedup biases the pool toward BTC-suitable picks).
+   `_allocate_source_targets` splits `max_results` evenly across the
+   catalogue, with any remainder falling on the earlier (crypto) sources.
 2. **Evaluate:** `strategy_selector` agent scores each strategy
-   (BTC & Project scores).
-3. **Select:** Highest-scoring strategy is chosen; others get
-   `skip_count++` and are archived after `MAX_SKIP_COUNT` skips.
-4. **Convert:** Orchestrator delegates to sub-agents:
+   (BTC & Project scores). `evaluator.py` applies deterministic
+   precheck rejects on top of the LLM output:
+   - `profit_factor < 1.0` → rejected.
+   - `max_drawdown_pct > MAX_DRAWDOWN_PCT` (50%) → rejected.
+3. **Select:** The selector enforces a **conviction floor**
+   (`btc_score + project_score >= MIN_SELECTION_SCORE`, currently 6) —
+   anything below is never converted. Others get `skip_count++` and are
+   archived after `MAX_SKIP_COUNT` skips. If no candidate clears the floor,
+   the pipeline fetches a fresh batch and retries.
+4. **Convert** (orchestrator subprocess, `run_orchestrator`): delegates to
    - **Transpiler** — writes `src/strategies/<safe_name>_strategy.py` with
      BOTH `generate_all_signals` and `step`.
    - **Validator** — static analysis, anti-lookahead, contract compliance
      (incl. both abstract methods).
    - **Test Generator** — writes `tests/strategies/test_<safe_name>_strategy.py`
      and runs pytest. Tests cover both modes.
+
+   The orchestrator emits `CONVERSION_PASS` when the Test Generator
+   returns. Integration is NOT delegated here — it runs in its own
+   subprocess after the gate passes. If stdout is buffered by `claude -p`
+   and the token never surfaces, `main.py` scans `agent_test_generator.md`
+   on disk as a fallback before declaring failure.
 4b. **Statistical Gate** (`src/pipeline/statistical_gate.py`) — loads the
     just-converted strategy, runs `generate_all_signals` on multi-year
     BTC/USDT 15m candles, then enforces:
@@ -88,9 +105,19 @@ fetch. `matplotlib` and `pyarrow` are required by the gate
     - **Win rate:** ≥`MIN_WIN_RATE` (50%) over ≥`MIN_TRADE_COUNT` (30) trades.
     A failure here is **terminal** (`statistically_rejected`) and does NOT
     consume a conversion attempt — the code was correct, the strategy is
-    just dead on data. Artifacts written to `output/<safe_name>/<ts>/eval/`.
-5. **Integration:** Pushes branch and opens GitHub PR via MCP.
-6. **Archive:** Low-scoring or stale strategies move to `archive/`.
+    just dead on data. Artifacts (`signal_heatmap.png`, `winrate_curve.png`,
+    `stats_report.json`) are written to `output/<safe_name>/<ts>/eval/` on
+    both pass and fail paths, so the PR body (on pass) or the post-mortem
+    (on fail) always has evidence on disk.
+4c. **Integration** (`run_integration`, separate subprocess): only invoked
+    after a passing gate. Creates the branch and opens the GitHub PR via
+    MCP — never through a local `git` call against sibling repos. The
+    integration agent must emit `INTEGRATION_PASS` or
+    `INTEGRATION_FALLBACK` (stdout or via `agent_integration.md` disk
+    fallback). A PR is never opened for a strategy that subsequently fails
+    the gate. If integration fails after a passing gate, the registry stays
+    at `selected` so the next run can retry integration only.
+5. **Archive:** Low-scoring or stale strategies move to `archive/`.
 
 ## Registry State Machine
 Tracked in `data/strategies_registry.json`. Each strategy progresses through:
@@ -111,6 +138,12 @@ conversion failures only; gate failures do NOT increment it.
 
 **Key constants** (in `src/pipeline/__init__.py`):
 - `ARCHIVE_SCORE_THRESHOLD = 4` — btc + proj score below this → archive
+- `MIN_SELECTION_SCORE = 6` — conviction floor; btc + proj below this is
+  never selected for conversion
+- `MAX_DRAWDOWN_PCT = 50.0` — author-reported drawdown above this →
+  deterministic reject in `evaluator.py` (mirrored belt-and-braces in
+  `strategy_selector.md`). `profit_factor < 1.0` is also an
+  unconditional reject.
 - `MAX_SKIP_COUNT = 2` — archive after being skipped this many times
 - `MAX_CONVERSION_ATTEMPTS = 3` — reject after this many failed conversions
 - `TARGET_STRATEGY_COUNT = 6` — minimum `.pine` files to maintain in `input/`
@@ -118,6 +151,11 @@ conversion failures only; gate failures do NOT increment it.
   `MIN_TRADE_COUNT = 30` — statistical-gate thresholds
 - `EVAL_EXCHANGE/SYMBOL/TIMEFRAME/START/END` — gate evaluation window
   (binance BTC/USDT 15m, 2018-01-01 → 2023-12-31)
+- `OHLCV_MIN_COVERAGE = 0.95` — minimum fraction of expected candles the
+  gate requires after download. The ccxt fetch in `src/evaluation/ohlcv.py`
+  is tolerant of user-placed parquets in `data/ohlcv_cache/`: non-canonical
+  filenames and FinRL-style schemas (RangeIndex + `date`/`tic` columns) are
+  normalized to the canonical UTC-indexed OHLCV layout and re-saved.
 
 ## Key Files & Directories
 
@@ -133,7 +171,9 @@ conversion failures only; gate failures do NOT increment it.
 | `tests/conftest.py` | Shared `sample_ohlcv_data` fixture (1,100 candles with warmup / sideways / bull / bear phases). |
 | `archive/` | Archived `.pine` sources. |
 | `archive/old_strategies/` | Pre-statistical-gate strategies and tests, kept for reference (do NOT import from here). |
-| `output/<safe_name>/<timestamp>/` | Per-run snapshot: generated code, tests, agent logs, `eval/stats_report.json`, `eval/signal_heatmap.png`. |
+| `output/<safe_name>/<timestamp>/` | Per-run snapshot: generated code, tests, agent logs (`agent_transpiler.md`, `agent_validator.md`, `agent_test_generator.md`, `agent_integration.md`), `eval/stats_report.json`, `eval/signal_heatmap.png`, `eval/winrate_curve.png`. |
+| `scripts/rerun_statistical_gate.py` | Standalone gate re-run: regenerates all three eval artifacts and updates the registry (`completed` on pass, `statistically_rejected` on fail, `conversion_attempts` reset to 0). |
+| `scripts/rank_strategies.py` | Cross-strategy leaderboard: scans `output/*/*/eval/stats_report.json`, filters to gate-passed strategies, ranks by `win_rate * avg_pnl_bps * sqrt(trades / min_trades)`, writes `leaderboard.md` + `leaderboard.json` + `winrate_comparison.png` locally (never pushed to rl-training). |
 
 ## `/convert` Slash Command
 To bypass scraping and evaluation for a specific file, drop a `.pine` file in

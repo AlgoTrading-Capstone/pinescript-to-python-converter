@@ -983,21 +983,21 @@
   },
   "6F-Signals-EMA-Filter-Label.pine": {
     "file_path": "input\\6F-Signals-EMA-Filter-Label.pine",
-    "status": "archived",
+    "status": "evaluated",
     "registered_at": "2026-04-02T16:03:01.134401+00:00",
     "scrape_source": "popular",
-    "evaluated_at": "2026-04-02T19:08:44.872434+00:00",
-    "evaluation_status": "scored",
+    "evaluated_at": "2026-04-23T10:09:28.722573+00:00",
+    "evaluation_status": "precheck_rejected",
     "pine_metadata": {
       "name": "6F Signals + EMA Filter + Label",
-      "safe_name": "6f_signals_ema_filter_label",
-      "timeframe": "unknown",
-      "lookback_bars": 20
+      "safe_name": "6F_Signals___EMA_Filter___Label",
+      "timeframe": "1h",
+      "lookback_bars": 100
     },
-    "category": "Trend",
-    "btc_score": 2,
-    "project_score": 3,
-    "recommendation_reason": "Poor backtest metrics across the board: profit factor 0.813 (sub-1, net losing), Sharpe -0.13, and max drawdown 34.34% over 220 trades. Core logic (Heikin Ashi breakout + 6/9 MA filter + fixed TP/SL) is transpilable, but heavy use of Pine drawing objects (line.new, label.new, array<line>) bloats the source without adding signal value. The HA swing-high/low detection with stateful c_high/c_low vars and signal_triggered flag adds moderate transpilation complexity. Not recommended for conversion given the weak performance profile.",
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=23 is below the RL minimum of 150.",
     "skip_count": 4,
     "archived_at": "2026-04-04T22:46:02.607929+00:00"
   },
@@ -1999,10 +1999,10 @@
   },
   "Gold-MTF.pine": {
     "file_path": "input\\Gold-MTF.pine",
-    "status": "new",
+    "status": "statistically_rejected",
     "registered_at": "2026-04-06T20:00:41.795886+00:00",
     "scrape_source": "popular",
-    "evaluated_at": "2026-04-06T20:01:09.618099+00:00",
+    "evaluated_at": "2026-04-19T17:53:28.313708+00:00",
     "evaluation_status": "scored",
     "pine_metadata": {
       "name": "Gold MTF Dashboard FINAL NO ERROR",
@@ -2010,10 +2010,22 @@
       "timeframe": "1m",
       "lookback_bars": 20
     },
-    "category": "Multi-Timeframe Trend Breakout",
-    "btc_score": 5,
-    "project_score": 5,
-    "recommendation_reason": "Solid MTF architecture (1/3/5min) with EMA trend, S/R breakout, volume filter, and ATR-based risk management — all mappable to our resampling utilities and BaseStrategy contract. However, backtest metrics are weak (PF 1.195, Sharpe 0.233), and the strategy fires three independent concurrent trade tracks (TF1/TF2/TF3) with dynamic bar_index entry labels, which adds transpilation complexity for the RL feature extractor. The [1] shifts on MTF S/R series also require careful lookahead auditing via resample_to_interval/resampled_merge. Designed for Gold XAUUSD scalping so BTC fit is moderate. Convertible but not a high-priority pick given marginal edge in the backtest data."
+    "category": "Trend",
+    "btc_score": 2,
+    "project_score": 3,
+    "recommendation_reason": "Strategy is Gold/XAUUSD-specific on 1-3-5 minute MTF scalping, which transfers poorly to BTC 15m evaluation window; profit factor 1.195 and Sharpe 0.233 are weak. Project-wise it exercises MTF resampling (request.security on volume, ATR, EMA, lowest/highest) which stresses the resampled_merge utility, but three parallel TF execution paths complicate the single-signal contract mapping to generate_all_signals.",
+    "conversion_attempts": 0,
+    "failed_at": "2026-04-19T18:07:49.866307+00:00",
+    "rejected_at": "2026-04-23T05:52:03.879847+00:00",
+    "output_dir": "output\\gold_mtf_dashboard\\2026-04-23_05-52-00",
+    "evaluation": {
+      "passed": false,
+      "reason": "winrate_below_threshold: 38.9% < 50%",
+      "signal_activity_pct": 0.06625707803473718,
+      "win_rate": 0.38904290429042904,
+      "trade_count": 7575,
+      "evaluated_at": "2026-04-23T05:52:00.608746+00:00"
+    }
   },
   "London-NZ-Sweep-FVG-HTF-FILTER.pine": {
     "file_path": "archive\\London-NZ-Sweep-FVG-HTF-FILTER\\London-NZ-Sweep-FVG-HTF-FILTER.pine",
@@ -2094,5 +2106,589 @@
     "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
     "skip_count": 1,
     "archived_at": "2026-04-06T20:20:45.673471+00:00"
+  },
+  "Booming-Bull-VWAP-Stoch-RSI-Multi-Pivot.pine": {
+    "file_path": "input\\Booming-Bull-VWAP-Stoch-RSI-Multi-Pivot.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T17:53:17.678844+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T17:53:28.317818+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Booming Bull:VWAP + Stoch RSI + Multi-Pivot",
+      "safe_name": "Booming_Bull_VWAP___Stoch_RSI___Multi_Pivot",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'automate'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
+    "skip_count": 4
+  },
+  "MASU-Epanechnikov-Edge-BTT.pine": {
+    "file_path": "input\\MASU-Epanechnikov-Edge-BTT.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T17:53:17.678844+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T17:53:28.321711+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "MASU+ Epanechnikov Edge [BTT]",
+      "safe_name": "MASU__Epanechnikov_Edge__BTT",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: Uses a loop over dynamic historical lookback data.",
+    "skip_count": 4
+  },
+  "MASU-Ultimate.pine": {
+    "file_path": "input\\MASU-Ultimate.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T17:53:17.679844+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T17:53:28.325725+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "MASU Ultimate - MTFúRibbonúSMCúOrderFlowúVolRegime",
+      "safe_name": "MASU_Ultimate___MTFúRibbonúSMCúOrderFlowúVolRegime",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
+    "skip_count": 4
+  },
+  "Asian-Breakout-AutoBot-NASDAQ-S-P-500-Gold.pine": {
+    "file_path": "input\\Asian-Breakout-AutoBot-NASDAQ-S-P-500-Gold.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T19:43:21.738337+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T19:43:21.753344+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Asian Breakout - AutoBot & Visuals",
+      "safe_name": "Asian_Breakout___AutoBot___Visuals",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=118 is below the RL minimum of 150.",
+    "skip_count": 3
+  },
+  "FVG-BOS-50-62-Entry-Bot.pine": {
+    "file_path": "input\\FVG-BOS-50-62-Entry-Bot.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T19:50:03.889434+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T19:50:03.891434+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "FVG BOS 50-62 Entry Bot",
+      "safe_name": "FVG_BOS_50_62_Entry_Bot",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
+    "skip_count": 3
+  },
+  "THE-DOMMY-SPLIT.pine": {
+    "file_path": "input\\THE-DOMMY-SPLIT.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T19:50:03.889434+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T19:50:03.894727+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "MNQ Midpoint Retest (7x2R + 3xRunner 4R/BE)",
+      "safe_name": "MNQ_Midpoint_Retest__7x2R___3xRunner_4R_BE",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=24 is below the RL minimum of 150.",
+    "skip_count": 3
+  },
+  "Traffic-Light-Strategy-Power-of-stocks.pine": {
+    "file_path": "input\\Traffic-Light-Strategy-Power-of-stocks.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T19:50:03.889434+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T19:50:03.898728+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Traffic Light Strategy -Power of stocks",
+      "safe_name": "Traffic_Light_Strategy__Power_of_stocks",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'automate'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
+    "skip_count": 3
+  },
+  "BROSIO-TRADES-8-00-15-Min-Break-and-Retest.pine": {
+    "file_path": "input\\BROSIO-TRADES-8-00-15-Min-Break-and-Retest.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T19:56:47.572242+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T19:56:47.577293+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "MNQ Midpoint Retest (7x2R + 3xRunner 4R/BE) FINAL",
+      "safe_name": "MNQ_Midpoint_Retest__7x2R___3xRunner_4R_BE__FINAL",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=27 is below the RL minimum of 150.",
+    "skip_count": 3
+  },
+  "JOAT-Institutional-Convergence-JOAT.pine": {
+    "file_path": "input\\JOAT-Institutional-Convergence-JOAT.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T19:56:47.575240+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T19:56:47.580295+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "JOAT Institutional Convergence [JOAT]",
+      "safe_name": "JOAT_Institutional_Convergence__JOAT",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=105 is below the RL minimum of 150.",
+    "skip_count": 3
+  },
+  "zero-line-momentum-strategy-precision-trend-following.pine": {
+    "file_path": "input\\zero-line-momentum-strategy-precision-trend-following.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T19:56:47.575240+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T19:56:47.585402+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Zero Line Momentum Strategy",
+      "safe_name": "Zero_Line_Momentum_Strategy",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=127 is below the RL minimum of 150.",
+    "skip_count": 3
+  },
+  "EMA5-Breakout-with-Target-Shifting-MTF-Buffer-Options.pine": {
+    "file_path": "input\\EMA5-Breakout-with-Target-Shifting-MTF-Buffer-Options.pine",
+    "status": "completed",
+    "registered_at": "2026-04-19T20:03:31.901531+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T20:03:40.956676+00:00",
+    "evaluation_status": "scored",
+    "pine_metadata": {
+      "name": "EMA5 Breakout with Target Shifting (TF & Buffer Options)",
+      "safe_name": "ema5_breakout_target_shifting_mtf",
+      "timeframe": "current",
+      "lookback_bars": 5
+    },
+    "category": "Breakout",
+    "btc_score": 1,
+    "project_score": 3,
+    "recommendation_reason": "Backtest metrics are severely negative: profit factor 0.684 (<1 means net loss), Sharpe -0.149, and catastrophic 90.78% max drawdown across 171 trades indicate the shifting-target logic bleeds continuously. The strategy is transpilable (MTF request.security + EMA + crossover, all vectorizable via resampled_merge and shift), but BTC viability is near zero given the negative expectancy on a simple EMA5 breakout.",
+    "conversion_attempts": 1,
+    "failed_at": "2026-04-19T20:09:42.871175+00:00",
+    "converted_at": "2026-04-23T05:52:00.607746+00:00",
+    "output_dir": "output\\ema5_breakout_target_shifting_mtf\\2026-04-23_05-51-53",
+    "evaluation": {
+      "passed": true,
+      "reason": null,
+      "signal_activity_pct": 0.11961640388171818,
+      "win_rate": 0.5071724577621932,
+      "trade_count": 25096,
+      "evaluated_at": "2026-04-23T05:51:53.163890+00:00"
+    }
+  },
+  "Kiki-moons.pine": {
+    "file_path": "input\\Kiki-moons.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T20:03:31.902532+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T20:03:40.961774+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Moon Phase Strategy",
+      "safe_name": "Moon_Phase_Strategy",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=68 is below the RL minimum of 150.",
+    "skip_count": 3
+  },
+  "trend-pullback-ema-combo-algorithmic-trend-following.pine": {
+    "file_path": "input\\trend-pullback-ema-combo-algorithmic-trend-following.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-19T20:03:31.902532+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-19T20:03:40.964774+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Trend Pullback EMA50 EMA200",
+      "safe_name": "Trend_Pullback_EMA50_EMA200",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=57 is below the RL minimum of 150.",
+    "skip_count": 3
+  },
+  "Airbus-Rejection-Block.pine": {
+    "file_path": "archive\\rejected\\Airbus-Rejection-Block\\Airbus-Rejection-Block.pine",
+    "status": "rejected",
+    "registered_at": "2026-04-23T06:30:56.282076+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T06:30:56.285078+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Airbus Rejection Block",
+      "safe_name": "Airbus_Rejection_Block",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=64 is below the RL minimum of 150.",
+    "skip_count": 2,
+    "rejected_at": "2026-04-23T09:59:17.461192+00:00",
+    "rejection_reason": "Rejected before selector: total_trades=64 is below the RL minimum of 150."
+  },
+  "NQ-MNQ-Super-Scalper-BACKTEST.pine": {
+    "file_path": "input\\NQ-MNQ-Super-Scalper-BACKTEST.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T06:30:56.283078+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T06:30:56.298373+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "NQ/MNQ Super Scalper [BACKTEST]",
+      "safe_name": "NQ_MNQ_Super_Scalper__BACKTEST",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: Uses a loop bounded by bar_index / last_bar_index.",
+    "skip_count": 2
+  },
+  "Supertrend-EMA-Rejection-Strategy.pine": {
+    "file_path": "input\\Supertrend-EMA-Rejection-Strategy.pine",
+    "status": "statistically_rejected",
+    "registered_at": "2026-04-23T06:30:56.283078+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T06:31:10.023680+00:00",
+    "evaluation_status": "scored",
+    "pine_metadata": {
+      "name": "Supertrend + EMA Rejection Strategy",
+      "safe_name": "supertrend_ema_rejection",
+      "timeframe": "multi",
+      "lookback_bars": 600
+    },
+    "category": "Trend",
+    "btc_score": 2,
+    "project_score": 3,
+    "recommendation_reason": "Backtest is weak: profit_factor 0.966 (<1, unprofitable), sharpe -0.064 (negative), over 416 trades — statistically unlikely to clear the 50% win-rate gate on BTC 15m. Project fit is moderate: the f_get_signals() function is cleanly vectorizable via resampled_merge for MTF, Supertrend+EMA+ATR are all TA-Lib/pandas-friendly, but the complex state machine (entry-window wait, break-even, EMA trailing, MACD exit, pivot targets, strategy.cancel) is entry-signal logic only for the converter — the gate just needs LONG/SHORT/FLAT. Given negative edge on the author's own backtest, low priority for conversion.",
+    "rejected_at": "2026-04-23T06:43:05.069716+00:00",
+    "output_dir": "output\\supertrend_ema_rejection\\2026-04-23_06-31-10",
+    "evaluation": {
+      "passed": false,
+      "reason": "variance_below_threshold: 4.96% < 5%",
+      "signal_activity_pct": 0.04963680387409201,
+      "win_rate": 0.0,
+      "trade_count": 0,
+      "evaluated_at": "2026-04-23T06:43:03.427507+00:00"
+    }
+  },
+  "BB-RSI-1-2-Rentable-en-4-horas.pine": {
+    "file_path": "input\\BB-RSI-1-2-Rentable-en-4-horas.pine",
+    "status": "failed",
+    "registered_at": "2026-04-23T08:57:08.130318+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T08:57:20.456770+00:00",
+    "evaluation_status": "scored",
+    "pine_metadata": {
+      "name": "BB + RSI | 1:2 Rentable en 4 horas",
+      "safe_name": "bb_rsi_1_2_rentable_4h",
+      "timeframe": "4h",
+      "lookback_bars": 20
+    },
+    "category": "Mean Reversion",
+    "btc_score": 2,
+    "project_score": 3,
+    "recommendation_reason": "Simple mean-reversion (price outside Bollinger Bands + RSI extreme) on 4h, easy to vectorize with ta.BBANDS and ta.RSI. However, the scraped backtest is poor: profit_factor 1.084, max_drawdown 107.32% (account blown), Sharpe 0.336 — author targeted US30/EURUSD on 30m, not BTC. Fade-the-extreme logic on BTC 15m historically generates many false signals in trending regimes, and the fixed 0.5% SL with 2:1 RR is unlikely to clear the gate's 50% win-rate threshold. Low conviction for BTC deployment.",
+    "conversion_attempts": 1,
+    "failed_at": "2026-04-23T09:00:15.393349+00:00"
+  },
+  "CNPS7-3SMA-Cross.pine": {
+    "file_path": "archive\\rejected\\CNPS7-3SMA-Cross\\CNPS7-3SMA-Cross.pine",
+    "status": "rejected",
+    "registered_at": "2026-04-23T08:57:08.131318+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T08:57:20.461829+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "CNPS7 - 3SMA Cross",
+      "safe_name": "CNPS7___3SMA_Cross",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction.",
+    "rejected_at": "2026-04-23T08:57:20.474890+00:00",
+    "rejection_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction."
+  },
+  "ORB-testing-Jivin.pine": {
+    "file_path": "archive\\rejected\\ORB-testing-Jivin\\ORB-testing-Jivin.pine",
+    "status": "rejected",
+    "registered_at": "2026-04-23T08:57:08.131318+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T08:57:20.466987+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "ORB-testing-Jivin",
+      "safe_name": "ORB_testing_Jivin",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=28 is below the RL minimum of 150.",
+    "rejected_at": "2026-04-23T08:57:20.477872+00:00",
+    "rejection_reason": "Rejected before selector: total_trades=28 is below the RL minimum of 150."
+  },
+  "CNPS6-BB-ADX.pine": {
+    "file_path": "input\\CNPS6-BB-ADX.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:04:14.659298+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:04:28.935994+00:00",
+    "evaluation_status": "scored",
+    "pine_metadata": {
+      "name": "CNPS6 -BB/ADX",
+      "safe_name": "cnps6_bb_adx",
+      "timeframe": "any",
+      "lookback_bars": 42
+    },
+    "category": "Trend",
+    "btc_score": 2,
+    "project_score": 3,
+    "recommendation_reason": "Bollinger Bands breakout confirmed by ADX>25 is a classic trend-following setup that transpiles cleanly to vectorized Pandas/TA-Lib (BBANDS + ADX), both causal and shift-safe. However, TradingView backtest metrics are weak (PF 1.055, Sharpe -0.583, only 1.81% max DD suggesting tiny position sizing on a non-BTC instrument) and the strategy is hard-coded Long-Only OR Short-Only via input — not both — which limits signal variance on BTC 15m. Session-close logic (VN UTC+7 hour/minute exit) is irrelevant for 24/7 crypto and should be dropped during transpilation. Point-based SL/TP (10/30 points) is instrument-specific and won't translate meaningfully to BTC; the core BB-breakout+ADX entry logic is what matters for the RL feature extractor."
+  },
+  "Multi-Session-Daily-Breakout-Strategy-v2.pine": {
+    "file_path": "input\\Multi-Session-Daily-Breakout-Strategy-v2.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:04:14.659298+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:04:28.940451+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Multi-Session Daily Breakout Strategy v2",
+      "safe_name": "Multi_Session_Daily_Breakout_Strategy_v2",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: signal logic depends on self-evaluation state via `strategy.equity`."
+  },
+  "Sniper-Scalping-Bot-15M-NQ-ES-Gold.pine": {
+    "file_path": "input\\Sniper-Scalping-Bot-15M-NQ-ES-Gold.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:09:28.720649+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:09:28.726553+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Sniper Scalping Bot 15M (NQ/ES/Gold)",
+      "safe_name": "Sniper_Scalping_Bot_15M__NQ_ES_Gold",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: backtest is unprofitable (profit_factor=0.852 < 1.0). RL target is profitable signal generators only."
+  },
+  "Confluence-Engine-Strategy-JOAT.pine": {
+    "file_path": "input\\Confluence-Engine-Strategy-JOAT.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:16:15.870606+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:16:15.873585+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Confluence Engine Strategy [JOAT]",
+      "safe_name": "Confluence_Engine_Strategy__JOAT",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: signal logic depends on self-evaluation state via `strategy.netprofit`."
+  },
+  "IWM-Connors-RSI-2-Long-Only.pine": {
+    "file_path": "input\\IWM-Connors-RSI-2-Long-Only.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:16:15.871570+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:16:15.877130+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "IWM Connors RSI(2) [Long-Only]",
+      "safe_name": "IWM_Connors_RSI_2___Long_Only",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=97 is below the RL minimum of 150."
+  },
+  "One-Shot-Strategy.pine": {
+    "file_path": "input\\One-Shot-Strategy.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:16:15.871570+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:16:15.880128+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "?? One Shot Strategy",
+      "safe_name": "One_Shot_Strategy",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=21 is below the RL minimum of 150."
+  },
+  "GLD-Donchian-Breakout-Long-Only.pine": {
+    "file_path": "input\\GLD-Donchian-Breakout-Long-Only.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:23:02.274022+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:23:02.276014+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "GLD Donchian Breakout [Long-Only]",
+      "safe_name": "GLD_Donchian_Breakout__Long_Only",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "Rejected before selector: total_trades=77 is below the RL minimum of 150."
+  },
+  "UT-Bot-Options-Seller-5-Min-Spike-Protected.pine": {
+    "file_path": "input\\UT-Bot-Options-Seller-5-Min-Spike-Protected.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:23:02.274022+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:23:02.280168+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "UT Bot Options Seller (5-Min Spike Protected)",
+      "safe_name": "UT_Bot_Options_Seller__5_Min_Spike_Protected",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: backtest is unprofitable (profit_factor=0.782 < 1.0). RL target is profitable signal generators only."
+  },
+  "VWAP-ORB-Pullback-Strategy.pine": {
+    "file_path": "input\\VWAP-ORB-Pullback-Strategy.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:23:02.274022+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:23:12.842089+00:00",
+    "evaluation_status": "scored",
+    "pine_metadata": {
+      "name": "VWAP ORB Pullback Strategy",
+      "safe_name": "vwap_orb_pullback",
+      "timeframe": "15m",
+      "lookback_bars": 14
+    },
+    "category": "Breakout",
+    "btc_score": 2,
+    "project_score": 3,
+    "recommendation_reason": "Intraday US-session ORB strategy anchored to NY 9:30 open and session VWAP — poorly suited to 24/7 BTC where there is no canonical session open, and ta.vwap resets are timeframe-dependent. Backtest shows marginal edge (PF 1.195, Sharpe 0.031) on equities-style sessions. Project fit is moderate: conditions are vectorizable (breakout, VWAP cross, EMA9, ATR) but the hardcoded America/New_York session window would need to be dropped or replaced with a rolling daily-anchored VWAP for crypto, and the pullback-touch logic (low<=vwap while close>vwap) requires careful causal framing to avoid lookahead."
+  },
+  "Reversal-COG.pine": {
+    "file_path": "input\\Reversal-COG.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:29:59.827543+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:29:59.829542+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Reversal-COG",
+      "safe_name": "Reversal_COG",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: Script is an execution framework/automation bot (matched keyword: 'bot'). This is not a mathematical signal generator and cannot be transpiled for RL feature extraction."
+  },
+  "Strategy-template-V1.pine": {
+    "file_path": "input\\Strategy-template-V1.pine",
+    "status": "evaluated",
+    "registered_at": "2026-04-23T10:29:59.827543+00:00",
+    "scrape_source": "popular",
+    "evaluated_at": "2026-04-23T10:29:59.833611+00:00",
+    "evaluation_status": "precheck_rejected",
+    "pine_metadata": {
+      "name": "Strategy template",
+      "safe_name": "Strategy_template",
+      "timeframe": "1h",
+      "lookback_bars": 100
+    },
+    "category": "Other",
+    "btc_score": 0,
+    "project_score": 0,
+    "recommendation_reason": "REJECTED: backtest is unprofitable (profit_factor=0.831 < 1.0). RL target is profitable signal generators only."
   }
 }
