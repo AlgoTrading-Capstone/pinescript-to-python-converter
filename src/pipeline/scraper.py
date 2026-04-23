@@ -12,6 +12,7 @@ from rich.table import Table
 
 from src.pipeline import INPUT_DIR, SEEN_URLS_PATH, TARGET_STRATEGY_COUNT
 from src.pipeline.ui import console, print_error, print_info, print_section, print_success, print_warning
+from src.utils.tv_scraper import SOURCE_URLS
 
 logger = logging.getLogger("runner")
 
@@ -32,13 +33,20 @@ def _save_seen_urls(seen_urls: set[str]) -> None:
     SEEN_URLS_PATH.write_text(json.dumps(sorted(seen_urls), indent=2), encoding="utf-8")
 
 
-def _allocate_source_targets(max_results: int) -> tuple[int, int]:
-    """Split the scrape request across sources without undercounting odd totals."""
-    if max_results <= 0:
-        return 0, 0
-    popular_target = (max_results + 1) // 2
-    editors_target = max_results - popular_target
-    return popular_target, editors_target
+def _allocate_source_targets(max_results: int) -> dict[str, int]:
+    """Distribute ``max_results`` evenly across :data:`SOURCE_URLS`.
+
+    Iteration order follows ``SOURCE_URLS`` insertion order. When
+    ``max_results`` isn't a clean multiple of the source count, the remainder
+    is assigned to the earliest sources so the crypto-focused listings win
+    on odd totals.
+    """
+    sources = list(SOURCE_URLS.keys())
+    if max_results <= 0 or not sources:
+        return {name: 0 for name in sources}
+    base = max_results // len(sources)
+    extra = max_results - base * len(sources)
+    return {s: base + (1 if i < extra else 0) for i, s in enumerate(sources)}
 
 
 def run_tv_scraper(max_results: int = 6) -> None:
@@ -50,13 +58,12 @@ def run_tv_scraper(max_results: int = 6) -> None:
     if max_results <= 0:
         return
 
-    popular_target, editors_target = _allocate_source_targets(max_results)
+    source_targets = _allocate_source_targets(max_results)
+    plan = ", ".join(f"{k}×{v}" for k, v in source_targets.items() if v > 0)
     print_section("Scraper")
     print_info(f"input/ has fewer than {TARGET_STRATEGY_COUNT} strategies.")
     print_info(f"Need {max_results} more strategy file(s) from TradingView.")
-    print_info(
-        f"Source allocation: Popular x{popular_target}, Editor's Picks x{editors_target}"
-    )
+    print_info(f"Source allocation: {plan}")
 
     # Block tv_scraper's logging.basicConfig from adding a root StreamHandler.
     _root_log = logging.getLogger()
@@ -90,9 +97,8 @@ def run_tv_scraper(max_results: int = 6) -> None:
 
     try:
         with TradingViewScraper(headless=False) as scraper:
-            urls = scraper.fetch_from_two_sources(
-                popular_target=popular_target,
-                editors_target=editors_target,
+            urls = scraper.fetch_from_sources(
+                source_targets=source_targets,
                 seen_urls=seen_urls,
             )
             discovered_counts.update(source for _, source in urls)
@@ -156,22 +162,24 @@ def run_tv_scraper(max_results: int = 6) -> None:
         _save_seen_urls(seen_urls)
         logger.info(f"Saved {len(seen_urls)} URL(s) to {SEEN_URLS_PATH}")
 
+    def _breakdown(counts: Counter[str]) -> str:
+        return ", ".join(f"{name}={counts.get(name, 0)}" for name in SOURCE_URLS)
+
     summary = Table(title="Scrape Summary", expand=False)
     summary.add_column("Metric", style="bold")
     summary.add_column("Value")
     summary.add_row("Requested", str(max_results))
-    summary.add_row("Source plan", f"popular={popular_target}, editors_pick={editors_target}")
+    summary.add_row(
+        "Source plan",
+        ", ".join(f"{k}={v}" for k, v in source_targets.items()),
+    )
     summary.add_row(
         "Discovered URLs",
-        f"{len(urls)} total "
-        f"(popular={discovered_counts.get('popular', 0)}, "
-        f"editors_pick={discovered_counts.get('editors_pick', 0)})",
+        f"{len(urls)} total ({_breakdown(discovered_counts)})",
     )
     summary.add_row(
         "Saved files",
-        f"{saved} "
-        f"(popular={processed_counts.get('popular', 0)}, "
-        f"editors_pick={processed_counts.get('editors_pick', 0)})",
+        f"{saved} ({_breakdown(processed_counts)})",
     )
     summary.add_row("Existing skips", str(skipped_existing))
     summary.add_row("Failures", str(failed))

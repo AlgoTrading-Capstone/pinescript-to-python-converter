@@ -194,6 +194,17 @@ def _parse_metric_to_float(raw_str: Optional[str]) -> Optional[float]:
 # ── Listing page constants ─────────────────────────────────────────────────────
 STRATEGIES_LISTING_URL = "https://www.tradingview.com/scripts/?script_type=strategies"
 EDITORS_PICKS_URL      = "https://www.tradingview.com/scripts/editors-picks/?script_type=strategies"
+
+# Named catalogue of listing sources. Insertion order is iteration order in
+# ``fetch_from_sources``; earlier sources claim URLs first on cross-source
+# dedup, so putting the crypto-focused pages first biases the scraped pool
+# toward BTC-suitable strategies (this pipeline's target market).
+SOURCE_URLS: dict[str, str] = {
+    "crypto_recent": "https://www.tradingview.com/scripts/crypto-strategy/?script_type=strategies&sort=recent",
+    "cryptotrading": "https://www.tradingview.com/scripts/cryptotrading/?script_access=all&script_type=strategies",
+    "popular":       STRATEGIES_LISTING_URL,
+    "editors_pick":  EDITORS_PICKS_URL,
+}
 _MAX_PAGES = 20  # Hard cap for pagination to prevent runaway scraping
 _LISTING_ANCHOR_SELECTOR = "a[href*='/script/']"
 _LISTING_LOAD_MORE_XPATHS = [
@@ -452,35 +463,46 @@ class TradingViewScraper:
 
         return results
 
-    def fetch_from_two_sources(
+    def fetch_from_sources(
         self,
-        popular_target: int,
-        editors_target: int,
+        source_targets: dict[str, int],
         seen_urls: set[str],
     ) -> list[tuple[str, str]]:
-        """Fetch new URLs from Popular and Editor's Picks with explicit budgets.
+        """Fetch new URLs from N named sources with explicit per-source budgets.
 
-        Cross-source deduplication is enforced: an Editor's Picks URL that already
-        appeared in the Popular results (or in seen_urls) is skipped, so the combined
-        list contains only fully unique, never-before-seen URLs.
+        Iterates ``source_targets`` in dict order. Each source sees the union
+        of ``seen_urls`` plus every URL already claimed by earlier sources, so
+        a strategy that appears on multiple listings is attributed to whichever
+        source was iterated first — dedup is exact across the combined result.
+
+        Args:
+            source_targets: mapping of source name (must be a key in
+                            ``SOURCE_URLS``) → how many new URLs to try to
+                            pull from that source.
+            seen_urls:      URLs already scraped on previous runs.
 
         Returns:
-            list of (url, source_tag) tuples where source_tag is "popular" or
-            "editors_pick". Up to popular_target + editors_target entries
-            (may be fewer if listings are exhausted).
+            list of (url, source_tag) tuples in the order sources were
+            iterated. Total length ≤ sum(source_targets.values()); may be
+            short when a listing is exhausted or a source URL is unknown.
         """
-        popular = self._fetch_new_urls(STRATEGIES_LISTING_URL, popular_target, seen_urls)
-        logger.info(f"Popular source: {len(popular)} new URL(s) found.")
+        results: list[tuple[str, str]] = []
+        combined_seen = set(seen_urls)
 
-        # Pass the union of persisted seen_urls + freshly collected popular URLs
-        # so Editor's Picks deduplication works across both sources.
-        combined_seen = seen_urls | set(popular)
-        editors = self._fetch_new_urls(EDITORS_PICKS_URL, editors_target, combined_seen)
-        logger.info(f"Editor's Picks source: {len(editors)} new URL(s) found.")
+        for source, target in source_targets.items():
+            if target <= 0:
+                continue
+            url = SOURCE_URLS.get(source)
+            if url is None:
+                logger.warning("Unknown scrape source '%s' — skipping.", source)
+                continue
+            found = self._fetch_new_urls(url, target, combined_seen)
+            logger.info("%s source: %d new URL(s) found.", source, len(found))
+            for u in found:
+                results.append((u, source))
+                combined_seen.add(u)
 
-        popular_tagged = [(url, "popular") for url in popular]
-        editors_tagged = [(url, "editors_pick") for url in editors]
-        return popular_tagged + editors_tagged
+        return results
 
     def fetch_pinescript(self, strategy_url: str) -> Optional[str]:
         """
