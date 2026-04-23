@@ -19,6 +19,8 @@ OUTPUT_DIR              = Path("output")
 LOGS_ROOT               = Path("logs")
 SEEN_URLS_PATH          = DATA_DIR / "seen_urls.json"
 ARCHIVE_SCORE_THRESHOLD = 4     # btc + proj < this → archive; >= this → keep
+MIN_SELECTION_SCORE     = 6     # btc + proj below this → never converted (conviction floor)
+MAX_DRAWDOWN_PCT        = 50.0  # author's own backtest drawdown (%) above this → deterministic reject
 TARGET_STRATEGY_COUNT   = 6     # minimum .pine files to keep in input/
 MAX_SEARCH_LOOPS        = 5     # retry cap for auto-selection before giving up
 MAX_SKIP_COUNT          = 2     # archive evaluated strategies after this many skips

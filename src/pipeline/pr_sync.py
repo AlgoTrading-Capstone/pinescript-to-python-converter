@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from src.pipeline import SUBPROCESS_ENV
+from src.pipeline.archiver import archive_strategy_bundle
 
 logger = logging.getLogger("runner")
 
@@ -160,6 +161,16 @@ def sync_pr_closure_to_registry(
             if rec.get("github_pr_rejection_note") != note:
                 rec["github_pr_rejection_note"] = note
                 changed = True
+            # Move the .pine out of input/ so the next run does not re-scan it.
+            src_pine = Path(rec.get("file_path", ""))
+            if src_pine.exists():
+                try:
+                    dest = archive_strategy_bundle(src_pine, subdir="rejected")
+                    rec["file_path"] = str(dest)
+                    changed = True
+                    logger.info("pr_sync: archived rejected %s -> %s", key, dest)
+                except OSError as e:
+                    logger.warning("pr_sync: could not archive %s: %s", src_pine, e)
         elif kind == "open":
             if rec.pop("github_pr_closed_without_merge_at", None) is not None:
                 changed = True

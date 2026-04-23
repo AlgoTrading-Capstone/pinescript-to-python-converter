@@ -8,6 +8,7 @@ from pathlib import Path
 from src.pipeline import (
     ARCHIVE_SCORE_THRESHOLD,
     MAX_CONVERSION_ATTEMPTS,
+    MIN_SELECTION_SCORE,
     _EXCLUDED_PINE_FILES,
     _verdict,
 )
@@ -34,14 +35,17 @@ def auto_select_strategy(registry: dict) -> tuple[str | None, dict | None]:
         and Path(v["file_path"]).exists()
     }
 
-    # Selection set: only strategies that CAN actually be picked
+    # Selection set: only strategies that CAN actually be picked.
+    # Conviction floor: btc + proj >= MIN_SELECTION_SCORE. Anything below is
+    # low-conviction — converting it wastes a pipeline slot on a strategy the
+    # evaluator itself flagged as weak.
     candidates = {
         k: v for k, v in registry.items()
         if v["status"] == "evaluated"
         and v.get("evaluation_status") not in INFRA_FAILURE_STATUSES
         and k not in _EXCLUDED_PINE_FILES
         and Path(v["file_path"]).exists()
-        and (v.get("btc_score", 0) + v.get("project_score", 0)) > 0
+        and (v.get("btc_score", 0) + v.get("project_score", 0)) >= MIN_SELECTION_SCORE
     }
 
     # Fallback: recycle from archive if no selectable candidates
@@ -50,7 +54,7 @@ def auto_select_strategy(registry: dict) -> tuple[str | None, dict | None]:
         if recycled:
             candidates = {
                 k: v for k, v in recycled.items()
-                if (v.get("btc_score", 0) + v.get("project_score", 0)) > 0
+                if (v.get("btc_score", 0) + v.get("project_score", 0)) >= MIN_SELECTION_SCORE
             }
             displayable.update(recycled)
         if not candidates:
@@ -63,7 +67,10 @@ def auto_select_strategy(registry: dict) -> tuple[str | None, dict | None]:
                 print_warning(
                     f"{infra_issues} strategy file(s) are blocked by evaluation infrastructure issues."
                 )
-            print_info("No selectable strategies scored above zero. Fetching a fresh batch.")
+            print_info(
+                f"No strategies scored at or above the conviction floor "
+                f"(total >= {MIN_SELECTION_SCORE}). Fetching a fresh batch."
+            )
             return None, None
 
     displayable.update(candidates)

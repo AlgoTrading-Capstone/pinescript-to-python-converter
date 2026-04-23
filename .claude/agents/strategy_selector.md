@@ -63,6 +63,16 @@ If ANY of the following is true, reject immediately:
 ## Signal Density Guardrail (from BACKTEST_METADATA — only apply when the field is NOT `N/A`)
 - **Insufficient Signal Density:** `total_trades < 150`.
   The RL engine needs continuous directional signal flow, not a strategy that only fires on rare anomalies.
+- **Unprofitable backtest:** `profit_factor < 1.0` (when the field is NOT `N/A`).
+  A strategy whose gross loss exceeds gross profit over its own author-tuned
+  window has no positive edge for RL to learn from. Write `REJECTED` in
+  `recommendation_reason`, include `profit_factor=<value>` in the reason, and
+  set both scores to `0`.
+- **Catastrophic drawdown:** `max_drawdown_pct > 50.0` (when the field is NOT `N/A`).
+  A strategy that blows up more than half its equity in its own author's
+  backtest cannot be a reliable RL signal source. Write `REJECTED` in
+  `recommendation_reason`, include `max_drawdown_pct=<value>` in the reason,
+  and set both scores to `0`.
 
 ## Structural Guardrails (always apply)
 - The script does NOT explicitly support BOTH long and short signal generation.

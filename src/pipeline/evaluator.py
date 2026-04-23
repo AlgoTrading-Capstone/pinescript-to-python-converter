@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from src.pipeline import SUBPROCESS_ENV, TERMINAL_STATUSES, _verdict
+from src.pipeline import MAX_DRAWDOWN_PCT, SUBPROCESS_ENV, TERMINAL_STATUSES, _verdict
 from src.pipeline.claude_cli import has_claude_cli
 from src.pipeline.registry import _now_iso, save_registry
 from src.pipeline.ui import (
@@ -243,6 +243,22 @@ def _deterministic_rejection(raw: str, meta: StrategyMetadata | None) -> Optiona
     total_trades = meta.backtest_metrics.total_trades if meta else None
     if total_trades is not None and total_trades < 150:
         return f"Rejected before selector: total_trades={total_trades} is below the RL minimum of 150."
+
+    profit_factor = meta.backtest_metrics.profit_factor if meta else None
+    if profit_factor is not None and profit_factor < 1.0:
+        return (
+            f"REJECTED: backtest is unprofitable "
+            f"(profit_factor={profit_factor:.3f} < 1.0). "
+            "RL target is profitable signal generators only."
+        )
+
+    max_dd = meta.backtest_metrics.max_drawdown_pct if meta else None
+    if max_dd is not None and max_dd > MAX_DRAWDOWN_PCT:
+        return (
+            f"REJECTED: author backtest drawdown is catastrophic "
+            f"(max_drawdown_pct={max_dd:.2f}% > {MAX_DRAWDOWN_PCT:.1f}%). "
+            "A strategy that blows up its own backtest cannot be a reliable RL signal source."
+        )
 
     fake_state = _contains_any(raw, FAKE_STATE_KEYWORDS)
     if fake_state:
