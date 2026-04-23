@@ -18,6 +18,22 @@ Delegate tasks to the appropriate specialist agents:
 
 # Operational Rules
 
+0. **Non-Interactive Mode (ABSOLUTE):**
+
+   You run under `claude -p --dangerously-skip-permissions`. There is NO USER
+   listening mid-run. You MUST NOT ask for confirmation at any stage, including
+   before:
+   - Creating a git branch, committing, or pushing to origin
+   - Calling `mcp__github__create_pull_request`
+   - Any "shared/external action" that the global "executing actions with care"
+     directives would normally gate
+
+   A pause-and-confirm message in place of the Integration handoff is a
+   PIPELINE FAILURE even if tests passed. Questions like "Want me to proceed?",
+   "Should I continue?", "Stop after the local commit?" are FORBIDDEN. If in
+   doubt, push and let the human review the PR — the PR itself is the review
+   checkpoint, not your pre-push confirmation.
+
 1. **Sequential Execution:**
    - Do NOT skip steps.
    - Do NOT run agents in parallel.
@@ -132,4 +148,13 @@ After the Test Generator succeeds, you MUST:
 
 **Stopping after tests pass without invoking Integration is a PIPELINE FAILURE.** The Python harness (`main.py`) checks for the `INTEGRATION_PASS` / `INTEGRATION_FALLBACK` token. If neither token appears in the output, the entire run is marked as failed — even if the strategy and tests are perfect.
 
-Do NOT summarize results and exit after tests pass. You MUST continue to the Integration Agent.
+Do NOT summarize results and exit after tests pass. You MUST continue to the Integration Agent. Questions like "Want me to proceed?", "Should I push the branch?", or "Stop after the local commit?" are FORBIDDEN in place of the Integration handoff — see Operational Rule #0.
+
+## Token Echo (required final output)
+
+After the Integration Agent returns, copy the `INTEGRATION_LOG_WRITTEN: ...`
+line and the `INTEGRATION_PASS` / `INTEGRATION_FALLBACK` line **verbatim** from
+the Integration agent's return value as the LAST TWO LINES of your own final
+response, in that order, as raw plain text (no code fences, no bullets). The
+Python harness scans parent stdout for these tokens; sub-agent output is not
+visible to it, so only the tokens you echo here can reach `main.py`.

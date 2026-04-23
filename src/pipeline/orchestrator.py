@@ -35,6 +35,30 @@ _EXPECTED_AGENT_LOGS = (
 )
 
 
+def _integration_token_from_disk(output_dir: Path) -> str | None:
+    """Scan ``output_dir/agent_integration.md`` for a completion token.
+
+    Under ``claude -p`` without ``--output-format stream-json``, intermediate
+    assistant output is buffered and sub-agent responses never reach parent
+    stdout. When the orchestrator runs the Integration agent via the Task tool,
+    its emitted INTEGRATION_PASS / INTEGRATION_FALLBACK can be invisible to the
+    stdout-token scanner above. The Integration agent's on-disk audit log is
+    the authoritative fallback — if it exists and contains a completion token,
+    the run succeeded even if nothing surfaced through the pipe.
+    """
+    report = output_dir / "agent_integration.md"
+    if not report.exists():
+        return None
+    try:
+        body = report.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for token in _SUCCESS_TOKENS:
+        if token in body:
+            return token
+    return None
+
+
 def _setup_strategy_logger(strategy_name: str) -> tuple[logging.Logger, Path]:
     """Create a dedicated timestamped logger + log directory for a conversion run."""
     from datetime import datetime, UTC
@@ -70,9 +94,11 @@ def run_orchestrator(
     Execute the orchestrator agent to convert a PineScript strategy.
 
     Streams stdout in real-time, routing log prefixes by agent handoff markers.
-    Returns (success, log_dir). Success requires BOTH:
+    Returns (success, log_dir). Success requires:
       - Process exit code 0
-      - INTEGRATION_PASS or INTEGRATION_FALLBACK token found in output
+      - INTEGRATION_PASS or INTEGRATION_FALLBACK token found in stdout,
+        OR present in ``output_dir/agent_integration.md`` on disk (fallback
+        for runs where the CLI buffers assistant output).
     """
     strat_logger, run_dir = _setup_strategy_logger(meta["name"])
     print_info(f"Launching orchestrator for '{meta['name']}'")
@@ -185,13 +211,21 @@ def run_orchestrator(
                 + ", ".join(sorted(missing_log_tokens))
             )
 
-        if process.returncode == 0 and completion_token_found:
-            strat_logger.info("Orchestrator completed successfully (token verified).")
-            return True, run_dir
-        elif process.returncode == 0 and not completion_token_found:
+        if process.returncode == 0:
+            if completion_token_found:
+                strat_logger.info("Orchestrator completed successfully (stdout token verified).")
+                return True, run_dir
+            disk_token = _integration_token_from_disk(output_dir)
+            if disk_token is not None:
+                strat_logger.info(
+                    f"Orchestrator completed: stdout token missing but '{disk_token}' "
+                    f"found in {output_dir / 'agent_integration.md'}."
+                )
+                return True, run_dir
             strat_logger.error(
-                "Orchestrator exited 0 but no INTEGRATION_PASS/FALLBACK token found. "
-                "Workflow likely stopped mid-pipeline. Treating as failure."
+                "Orchestrator exited 0 but no INTEGRATION_PASS/FALLBACK token found in "
+                "stdout or agent_integration.md. Workflow likely stopped mid-pipeline. "
+                "Treating as failure."
             )
             return False, run_dir
         else:

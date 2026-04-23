@@ -69,6 +69,110 @@ def _cache_path(
     return cache_dir / name
 
 
+_OHLCV_COLUMNS = ("open", "high", "low", "close", "volume")
+_TIMESTAMP_COLUMN_CANDIDATES = ("date", "timestamp", "time", "datetime", "open_time")
+
+
+def _normalize_ohlcv_df(df: pd.DataFrame) -> pd.DataFrame:
+    """Coerce a user-supplied OHLCV DataFrame to the canonical schema.
+
+    Canonical schema: tz-aware UTC DatetimeIndex, columns exactly
+    ``[open, high, low, close, volume]``, sorted, de-duplicated.
+    Accepts FinRL-style inputs (RangeIndex + ``date`` column + extra
+    columns like ``tic``) alongside the already-canonical form.
+    """
+    working = df.copy()
+
+    if not isinstance(working.index, pd.DatetimeIndex):
+        ts_col = next(
+            (c for c in _TIMESTAMP_COLUMN_CANDIDATES if c in working.columns),
+            None,
+        )
+        if ts_col is None:
+            raise ValueError(
+                "user-supplied OHLCV parquet has no DatetimeIndex and no "
+                f"timestamp column in {_TIMESTAMP_COLUMN_CANDIDATES}"
+            )
+        working[ts_col] = pd.to_datetime(working[ts_col], utc=True)
+        working = working.set_index(ts_col)
+
+    if working.index.tz is None:
+        working.index = working.index.tz_localize("UTC")
+    else:
+        working.index = working.index.tz_convert("UTC")
+
+    missing = [c for c in _OHLCV_COLUMNS if c not in working.columns]
+    if missing:
+        raise ValueError(
+            f"user-supplied OHLCV parquet missing required columns: {missing}"
+        )
+
+    working = working[list(_OHLCV_COLUMNS)]
+    working = working[~working.index.duplicated(keep="first")].sort_index()
+    working.index.name = "timestamp"
+    return working
+
+
+def _candidate_cache_files(
+    cache_dir: Path,
+    exchange_name: str,
+    symbol: str,
+    timeframe: str,
+) -> list[Path]:
+    """Return cache files that could plausibly hold this (exchange, symbol, tf)."""
+    slash_variants = {
+        symbol.replace("/", "").replace(":", "_"),
+        symbol.replace("/", "_").replace(":", "_"),
+    }
+    patterns: list[str] = []
+    for sym in slash_variants:
+        patterns.append(f"{exchange_name}_{sym}_{timeframe}_*.parquet")
+        patterns.append(f"{exchange_name}_{sym}_{timeframe}.parquet")
+    seen: set[Path] = set()
+    results: list[Path] = []
+    for pat in patterns:
+        for path in cache_dir.glob(pat):
+            if path not in seen:
+                seen.add(path)
+                results.append(path)
+    return results
+
+
+def _scan_compatible_cache(
+    cache_dir: Path,
+    exchange_name: str,
+    symbol: str,
+    timeframe: str,
+    start_dt: datetime,
+    end_dt: datetime,
+) -> Optional[pd.DataFrame]:
+    """Locate a user-placed raw parquet whose coverage spans [start, end).
+
+    Returns the normalized + sliced DataFrame if one is found, else None.
+    """
+    for path in _candidate_cache_files(cache_dir, exchange_name, symbol, timeframe):
+        try:
+            raw = pd.read_parquet(path)
+            df = _normalize_ohlcv_df(raw)
+        except Exception as exc:
+            logger.warning(f"Skipping incompatible cache file {path.name}: {exc}")
+            continue
+
+        sliced = df[(df.index >= start_dt) & (df.index < end_dt)]
+        try:
+            _assert_coverage(sliced, start_dt, end_dt, timeframe)
+        except OHLCVCoverageError as exc:
+            logger.info(f"Cache {path.name} below coverage for requested window: {exc}")
+            continue
+
+        logger.info(
+            f"Loaded user-supplied cache {path.name}: "
+            f"{len(sliced):,} candles in requested window"
+        )
+        return sliced
+    return None
+
+
 def _expected_candle_count(start: datetime, end: datetime, timeframe: str) -> int:
     total_minutes = (end - start).total_seconds() / 60.0
     return max(1, int(total_minutes // timeframe_to_minutes(timeframe)))
@@ -159,8 +263,20 @@ def fetch_range(
     if cache_file.exists() and not force_refresh:
         logger.info(f"Loading OHLCV from cache: {cache_file.name}")
         df = pd.read_parquet(cache_file)
+        df = _normalize_ohlcv_df(df)
         _assert_coverage(df, start_dt, end_dt, timeframe)
         return df
+
+    if not force_refresh:
+        compatible = _scan_compatible_cache(
+            cache_dir, exchange_name, symbol, timeframe, start_dt, end_dt
+        )
+        if compatible is not None:
+            compatible.to_parquet(cache_file)
+            logger.info(
+                f"Persisted canonical copy of user cache to {cache_file.name}"
+            )
+            return compatible
 
     logger.info(
         f"Downloading OHLCV {exchange_name} {symbol} {timeframe} "

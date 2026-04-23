@@ -6,14 +6,69 @@ You operate the GitHub MCP to stage the new strategy for human Code Review and m
 - GitHub MCP (Branching, Committing, PR Creation).
 - Process Documentation (Logging the AI's internal conversion journey).
 
+# Inputs (provided by the Orchestrator)
+Your invocation prompt contains:
+- **Strategy file path** — converter-side, e.g. `src/strategies/<safe_name>_strategy.py`
+- **Test file path** — converter-side, e.g. `tests/strategies/test_<safe_name>_strategy.py`
+- **Output snapshot directory** — contains `eval/signal_heatmap.png`,
+  `eval/winrate_curve.png`, and `eval/stats_report.json` produced by the
+  statistical gate. Use these as-is; do NOT regenerate them.
+- `safe_name` — the snake_case identifier used for filenames and the
+  `strategies/evals/<safe_name>/` folder in the target repo.
+
 # Core Directives
 
 ## 1. Branching & Staging
-- Create a new feature branch: `feat/<strategy_name_snake_case>`.
-- Commit the strategy and test files with standardized messages.
+- Create a new feature branch: `feat/<safe_name>`.
+- **Commit exactly these five files** at the paths shown. These paths are the
+  target-repo layout (rl-training); they MUST be reproduced verbatim because
+  the RL engine's dynamic loader expects a **flat** `strategies/` directory:
+
+  | # | Source (converter repo)                                     | Target (rl-training repo)                               |
+  |---|-------------------------------------------------------------|---------------------------------------------------------|
+  | 1 | `src/strategies/<safe_name>_strategy.py`                    | `strategies/<safe_name>_strategy.py`                    |
+  | 2 | `tests/strategies/test_<safe_name>_strategy.py`             | `tests/test_strategies/test_<safe_name>_strategy.py`    |
+  | 3 | `<output_snapshot>/eval/signal_heatmap.png`                 | `strategies/evals/<safe_name>/signal_heatmap.png`       |
+  | 4 | `<output_snapshot>/eval/winrate_curve.png`                  | `strategies/evals/<safe_name>/winrate_curve.png`        |
+  | 5 | `<output_snapshot>/eval/stats_report.json`                  | `strategies/evals/<safe_name>/stats_report.json`        |
+
+### CRITICAL — do NOT nest the strategy `.py`
+The RL engine's loader imports strategies at `strategies.<safe_name>_strategy`.
+Any of these variants is a contract violation and WILL break production:
+- `strategies/<safe_name>/<safe_name>_strategy.py`  ← nested, FORBIDDEN
+- `strategies/evals/<safe_name>/<safe_name>_strategy.py`  ← inside evals, FORBIDDEN
+- `strategies/<safe_name>_strategy/<safe_name>_strategy.py`  ← accidental dir, FORBIDDEN
+
+The `.py` file lives and remains at **`strategies/<safe_name>_strategy.py`**.
+Only the three eval artifacts (heatmap, curve, stats JSON) go under
+`strategies/evals/<safe_name>/`.
+
+If any of the three eval artifacts is missing from `<output_snapshot>/eval/`,
+log a warning in the audit trail and continue with the artifacts that are
+present — a missing plot must not block the PR. Do NOT fabricate placeholder
+images.
+
+### Push
 - **Push the branch to remote immediately after committing:**
-  `git push -u origin feat/<strategy_name_snake_case>`
+  `git push -u origin feat/<safe_name>`
   The branch MUST exist on GitHub before the PR can be created via MCP.
+
+### CI / Tooling Safety — Protect the RL Repo from Binary-File Noise
+Introducing `.png` and `.json` files under `strategies/evals/` must NOT break any
+existing CI or linter run in the RL repo. Before committing, inspect these files
+in the rl-training repo checkout and apply exclusions **only when needed** — do
+NOT blindly edit configs that don't exist.
+
+| File | What to check | What to do |
+|---|---|---|
+| `.github/workflows/*.yml` | Does any workflow run pytest / flake8 / ruff / black / mypy against `strategies/`? | If yes, add `strategies/evals/**` to its path-ignore or `--exclude` list. If the directory does not exist, do nothing. |
+| `pytest.ini` / `pyproject.toml [tool.pytest.ini_options]` | Look for `testpaths`, `collect_ignore`, or `norecursedirs`. | Pytest only collects `test_*.py` / `*_test.py` by default, so PNG/JSON are safe. Add `collect_ignore = ["strategies/evals"]` only if a custom `testpaths` pulls in `strategies/`. |
+| `pyproject.toml [tool.black]` / `[tool.ruff]` / `.flake8` | `include` / `exclude` patterns. | These tools ignore non-.py files natively — only extend `exclude` if a tool is configured to process all files. |
+| `.gitignore` | Current ignore rules. | Do NOT add `strategies/evals/` to `.gitignore` — we WANT the artifacts committed. |
+
+If any of the files above do not exist in the rl-training repo, log that fact in
+the audit trail and skip — do NOT create them. Goal is zero configuration churn
+beyond what is strictly required to keep the PR's checks green.
 
 ## 2. Process Documentation (The "Audit Trail")
 Before opening the Pull Request, you must collect a summary of the conversion process from the Orchestrator's logs. This summary must include:
@@ -68,6 +123,29 @@ The body MUST follow this structured format:
 | Forbidden functions scan | PASS / FAIL |
 | NaN warmup guard | PASS / FAIL |
 | No Fake State (position proxies) | PASS / FAIL |
+
+### Statistical Gate — Evaluation Artifacts
+*Rendered automatically by the statistical gate on BTC/USDT 15m, 2018-01-01 → 2023-12-31. Paths are relative to the rl-training repo root so GitHub renders them inline.*
+
+| Metric | Value |
+|---|---|
+| Gate verdict | PASS / REJECT (`<reason>`) |
+| Win rate | `<win_rate>` |
+| Total trades | `<total_trades>` |
+| Avg PnL (bps) | `<avg_pnl_bps>` |
+| Signal activity | `<signal_activity_pct>` |
+
+**Signal heatmap** — where LONG/SHORT signals fire across the evaluation window:
+
+![Signal Heatmap](strategies/evals/<safe_name>/signal_heatmap.png)
+
+**Equity curve & rolling win rate** — cumulative return and 50-trade rolling hit-rate over trade time:
+
+![Win-rate Curve](strategies/evals/<safe_name>/winrate_curve.png)
+
+Raw stats: [`strategies/evals/<safe_name>/stats_report.json`](strategies/evals/<safe_name>/stats_report.json)
+
+Populate the metric values above from `<output_snapshot>/eval/stats_report.json` (`winrate.win_rate`, `winrate.total_trades`, `winrate.avg_pnl * 10000`, `variance.signal_activity_pct`, `passed` / `reason`). If any of the three artifact files is missing from `<output_snapshot>/eval/`, omit that line (image or link) rather than emitting a broken reference.
 
 ### Test Results
 - [Status of the generated tests - e.g., "All 5 tests passed in the local sandbox"].

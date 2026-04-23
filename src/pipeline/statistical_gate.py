@@ -45,7 +45,12 @@ from src.evaluation.runner import (
     generate_signals_for_strategy,
 )
 from src.evaluation.variance import signal_activity_pct
-from src.evaluation.winrate import compute_winrate, passes_winrate
+from src.evaluation.winrate import (
+    compute_trades,
+    compute_winrate,
+    passes_winrate,
+    render_winrate_curve,
+)
 from src.pipeline import (
     EVAL_END,
     EVAL_EXCHANGE,
@@ -109,6 +114,7 @@ def _write_artifacts(
     signals: Optional[pd.Series],
     ohlcv_df: Optional[pd.DataFrame],
     strategy_name: str,
+    trades: Optional[pd.DataFrame] = None,
 ) -> None:
     eval_dir.mkdir(parents=True, exist_ok=True)
 
@@ -124,6 +130,19 @@ def _write_artifacts(
         )
         if heatmap_path.exists():
             result.artifacts["heatmap"] = str(heatmap_path.relative_to(eval_dir.parent))
+
+    if trades is not None and not trades.empty:
+        curve_path = eval_dir / "winrate_curve.png"
+        verdict = "PASS" if result.passed else f"REJECT ({result.reason or 'unknown'})"
+        rendered = render_winrate_curve(
+            trades=trades,
+            output_path=curve_path,
+            title=f"{strategy_name} [{verdict}]",
+        )
+        if rendered is not None and curve_path.exists():
+            result.artifacts["winrate_curve"] = str(
+                curve_path.relative_to(eval_dir.parent)
+            )
 
     stats_path = eval_dir / "stats_report.json"
     stats_path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
@@ -213,6 +232,7 @@ def run_statistical_gate(
 
     # Step 4 — win-rate check
     winrate_stats = compute_winrate(ohlcv_df["close"], signals)
+    trades_df = compute_trades(ohlcv_df["close"], signals)
     winrate_passed = passes_winrate(
         winrate_stats,
         min_win_rate=MIN_WIN_RATE,
@@ -237,7 +257,9 @@ def run_statistical_gate(
                 f"{winrate_stats['win_rate']:.1%} < {MIN_WIN_RATE:.0%}"
             )
         logger.info(f"[GATE] {strategy.name} — {base_result.reason}")
-        _write_artifacts(eval_dir, base_result, signals, ohlcv_df, strategy.name)
+        _write_artifacts(
+            eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,
+        )
         return base_result
 
     # All checks passed
@@ -247,5 +269,7 @@ def run_statistical_gate(
         f"activity={activity_pct:.1%}, "
         f"winrate={winrate_stats['win_rate']:.1%} over {winrate_stats['total_trades']} trades"
     )
-    _write_artifacts(eval_dir, base_result, signals, ohlcv_df, strategy.name)
+    _write_artifacts(
+        eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,
+    )
     return base_result
