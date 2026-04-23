@@ -1,0 +1,42 @@
+{
+  "passed": true,
+  "reason": null,
+  "strategy_name": "EMA5 Breakout with Target Shifting (TF & Buffer Options)",
+  "evaluated_at": "2026-04-23T05:51:53.163890+00:00",
+  "eval_window": {
+    "exchange": "binance",
+    "symbol": "BTC/USDT",
+    "timeframe": "15m",
+    "start": "2018-01-01T00:00:00Z",
+    "end": "2023-12-31T23:59:59Z",
+    "candle_count": 209804
+  },
+  "lookback": {
+    "min_candles_required": 15,
+    "timeframe": "15m",
+    "lookback_hours": 3.75
+  },
+  "variance": {
+    "signal_activity_pct": 0.11961640388171818,
+    "threshold": 0.05,
+    "passed": true
+  },
+  "winrate": {
+    "win_rate": 0.5071724577621932,
+    "total_trades": 25096,
+    "avg_pnl": 1.7428727984084273e-05,
+    "min_trades_threshold": 30,
+    "min_winrate_threshold": 0.5,
+    "passed": true
+  },
+  "signal_counts": {
+    "LONG": 11980,
+    "SHORT": 13116,
+    "FLAT": 184708,
+    "HOLD": 0
+  },
+  "artifacts": {
+    "heatmap": "eval\\signal_heatmap.png",
+    "winrate_curve": "eval\\winrate_curve.png"
+  }
+}
