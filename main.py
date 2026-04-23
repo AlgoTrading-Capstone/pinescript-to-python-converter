@@ -22,11 +22,11 @@ from src.pipeline import (
     _EXCLUDED_PINE_FILES,
 )
 from src.evaluation.loader import StrategyLoadError, load_strategy_by_safe_name
-from src.pipeline.archiver import archive_remaining, archive_strategy_bundle
+from src.pipeline.archiver import archive_remaining, archive_strategy_bundle, purge_rejected_evaluations
 from src.pipeline.category_counts import increment_category_count
 from src.pipeline.claude_cli import get_claude_cli_path
 from src.pipeline.evaluator import run_evaluations
-from src.pipeline.orchestrator import copy_artifacts, run_orchestrator, verify_artifacts
+from src.pipeline.orchestrator import copy_artifacts, run_integration, run_orchestrator, verify_artifacts
 from src.pipeline.pr_sync import sync_pr_closure_to_registry
 from src.pipeline.registry import _now_iso, load_registry, save_registry, scan_and_register
 from src.pipeline.scraper import run_tv_scraper
@@ -118,6 +118,12 @@ def main() -> None:
         # Step 2 — Evaluate new strategies (isolated, one at a time)
         registry = run_evaluations(registry)
 
+        # Step 2b — Purge zero-scored strategies from input/ immediately, so
+        # the next run does not re-scan them. Covers LLM rejection,
+        # precheck_rejected, and the dissonance-override path.
+        registry = purge_rejected_evaluations(registry)
+        save_registry(registry)
+
         # Step 3 — Auto-select the highest-scoring strategy.
         # If no evaluated strategies exist, fetch a fresh batch and retry.
         chosen_key, chosen_rec = None, None
@@ -179,10 +185,20 @@ def main() -> None:
 
             if gate_result is not None and not gate_result.passed:
                 print_warning(f"Strategy rejected by statistical gate: {gate_result.reason}")
+                # Move the .pine to archive/rejected/ NOW so it disappears
+                # from input/ on this same run.
+                pine_src = Path(chosen_rec["file_path"])
+                new_file_path = str(pine_src)
+                if pine_src.exists():
+                    try:
+                        new_file_path = str(archive_strategy_bundle(pine_src, subdir="rejected"))
+                    except OSError as archive_err:
+                        logger.warning(f"Could not archive gate-rejected .pine: {archive_err}")
                 registry[chosen_key].update({
                     "status":       "statistically_rejected",
                     "rejected_at":  _now_iso(),
                     "output_dir":   str(out_dir),
+                    "file_path":    new_file_path,
                     "evaluation":   gate_result.to_registry_block(),
                 })
                 save_registry(registry)
@@ -198,6 +214,24 @@ def main() -> None:
                 )
 
         if success:
+            # Step 4c — Integration (branch + PR) runs AFTER a passing gate,
+            # in its own subprocess. A PR is never opened for a strategy that
+            # subsequently fails the gate, and the gate's .png / .json
+            # artifacts are already on disk for the PR body.
+            print_section("Integration")
+            integration_ok = run_integration(
+                strategy_path   = Path("src/strategies") / f"{safe_name}_strategy.py",
+                test_path       = Path("tests/strategies") / f"test_{safe_name}_strategy.py",
+                output_snapshot = out_dir,
+                safe_name       = safe_name,
+            )
+            if not integration_ok:
+                # Tests passed, gate passed, but PR push failed. Keep the
+                # registry entry 'selected' so the next run can retry
+                # integration only. Do NOT mark completed, do NOT archive.
+                print_error("Integration failed after a passing gate.")
+                sys.exit(1)
+
             pine_src = Path(chosen_rec["file_path"])
             archived_pine = archive_strategy_bundle(pine_src)
             new_file_path = str(archived_pine)

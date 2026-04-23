@@ -19,56 +19,62 @@ Your invocation prompt contains:
 # Core Directives
 
 ## 1. Branching & Staging
-- Create a new feature branch: `feat/<safe_name>`.
-- **Commit exactly these five files** at the paths shown. These paths are the
-  target-repo layout (rl-training); they MUST be reproduced verbatim because
-  the RL engine's dynamic loader expects a **flat** `strategies/` directory:
+- Create a new feature branch `feat/<safe_name>` on the **Converter repo**
+  (`pinescript-to-python-converter`). This is where the PR is opened and
+  reviewed — there is no sibling / cross-repo publication step.
+- **Commit exactly these five files.** The eval artifacts live at their
+  `<output_snapshot>` path locally but `output/` is gitignored; commit them
+  at a non-ignored `strategies/evals/<safe_name>/` path so the PR body can
+  reference them inline:
 
-  | # | Source (converter repo)                                     | Target (rl-training repo)                               |
-  |---|-------------------------------------------------------------|---------------------------------------------------------|
-  | 1 | `src/strategies/<safe_name>_strategy.py`                    | `strategies/<safe_name>_strategy.py`                    |
-  | 2 | `tests/strategies/test_<safe_name>_strategy.py`             | `tests/test_strategies/test_<safe_name>_strategy.py`    |
-  | 3 | `<output_snapshot>/eval/signal_heatmap.png`                 | `strategies/evals/<safe_name>/signal_heatmap.png`       |
-  | 4 | `<output_snapshot>/eval/winrate_curve.png`                  | `strategies/evals/<safe_name>/winrate_curve.png`        |
-  | 5 | `<output_snapshot>/eval/stats_report.json`                  | `strategies/evals/<safe_name>/stats_report.json`        |
-
-### CRITICAL — do NOT nest the strategy `.py`
-The RL engine's loader imports strategies at `strategies.<safe_name>_strategy`.
-Any of these variants is a contract violation and WILL break production:
-- `strategies/<safe_name>/<safe_name>_strategy.py`  ← nested, FORBIDDEN
-- `strategies/evals/<safe_name>/<safe_name>_strategy.py`  ← inside evals, FORBIDDEN
-- `strategies/<safe_name>_strategy/<safe_name>_strategy.py`  ← accidental dir, FORBIDDEN
-
-The `.py` file lives and remains at **`strategies/<safe_name>_strategy.py`**.
-Only the three eval artifacts (heatmap, curve, stats JSON) go under
-`strategies/evals/<safe_name>/`.
+  | # | Local source (read with Read tool)                 | Converter repo target path                              |
+  |---|-----------------------------------------------------|---------------------------------------------------------|
+  | 1 | `src/strategies/<safe_name>_strategy.py`            | `src/strategies/<safe_name>_strategy.py`                |
+  | 2 | `tests/strategies/test_<safe_name>_strategy.py`     | `tests/strategies/test_<safe_name>_strategy.py`         |
+  | 3 | `<output_snapshot>/eval/signal_heatmap.png`         | `strategies/evals/<safe_name>/signal_heatmap.png`       |
+  | 4 | `<output_snapshot>/eval/winrate_curve.png`          | `strategies/evals/<safe_name>/winrate_curve.png`        |
+  | 5 | `<output_snapshot>/eval/stats_report.json`          | `strategies/evals/<safe_name>/stats_report.json`        |
 
 If any of the three eval artifacts is missing from `<output_snapshot>/eval/`,
 log a warning in the audit trail and continue with the artifacts that are
 present — a missing plot must not block the PR. Do NOT fabricate placeholder
 images.
 
-### Push
-- **Push the branch to remote immediately after committing:**
-  `git push -u origin feat/<safe_name>`
-  The branch MUST exist on GitHub before the PR can be created via MCP.
+## MANDATORY — GitHub MCP ONLY (Converter repo)
 
-### CI / Tooling Safety — Protect the RL Repo from Binary-File Noise
-Introducing `.png` and `.json` files under `strategies/evals/` must NOT break any
-existing CI or linter run in the RL repo. Before committing, inspect these files
-in the rl-training repo checkout and apply exclusions **only when needed** — do
-NOT blindly edit configs that don't exist.
+Branch, file upload, and PR all go through the GitHub MCP server against the
+**Converter repo** (`pinescript-to-python-converter`). Stay inside the
+Converter working tree the entire time. Read artifacts with your Read tool;
+publish exclusively via:
 
-| File | What to check | What to do |
-|---|---|---|
-| `.github/workflows/*.yml` | Does any workflow run pytest / flake8 / ruff / black / mypy against `strategies/`? | If yes, add `strategies/evals/**` to its path-ignore or `--exclude` list. If the directory does not exist, do nothing. |
-| `pytest.ini` / `pyproject.toml [tool.pytest.ini_options]` | Look for `testpaths`, `collect_ignore`, or `norecursedirs`. | Pytest only collects `test_*.py` / `*_test.py` by default, so PNG/JSON are safe. Add `collect_ignore = ["strategies/evals"]` only if a custom `testpaths` pulls in `strategies/`. |
-| `pyproject.toml [tool.black]` / `[tool.ruff]` / `.flake8` | `include` / `exclude` patterns. | These tools ignore non-.py files natively — only extend `exclude` if a tool is configured to process all files. |
-| `.gitignore` | Current ignore rules. | Do NOT add `strategies/evals/` to `.gitignore` — we WANT the artifacts committed. |
+> ### Why the Converter repo (not rl-training)
+> The human reviewer is the merge gate. When the PR is merged,
+> `.github/workflows/deploy_to_rl.yml` auto-deploys the strategy to the
+> rl-training sibling repo (copies `src/strategies/<name>_strategy.py` to
+> `strategies/<name>_strategy.py`, rewrites `from src.base_strategy` →
+> `from strategies.base_strategy`, and updates the rl-training registry).
+> Opening the PR against rl-training directly would bypass the human-in-the-loop
+> review. Leave the rl-training sync to the Action.
 
-If any of the files above do not exist in the rl-training repo, log that fact in
-the audit trail and skip — do NOT create them. Goal is zero configuration churn
-beyond what is strictly required to keep the PR's checks green.
+
+1. `mcp__github__create_branch` — create `feat/<safe_name>` on the
+   Converter remote (`from_branch: main`).
+2. `mcp__github__push_files` (or `mcp__github__create_or_update_file`
+   per-file) — upload the five files in one commit to `feat/<safe_name>`.
+3. `mcp__github__create_pull_request` — open the PR (`head: feat/<safe_name>`,
+   `base: main`) against the Converter repo.
+
+### FORBIDDEN (any occurrence → `INTEGRATION_FALLBACK`)
+- Opening a PR against any repository other than the Converter
+- `cd C:\Projects\rl-training` (or any sibling working tree)
+- `subprocess.run(["git", ...])` / `git push` / `git commit` / `git branch`
+  pointed at another local project
+- Running a local `git push -u origin feat/<safe_name>` instead of using
+  MCP — the branch must be created on the remote via
+  `mcp__github__create_branch`
+
+If the GitHub MCP server is unavailable, emit `INTEGRATION_FALLBACK` with
+manual paste instructions. Do NOT fall back to local shell `git` operations.
 
 ## 2. Process Documentation (The "Audit Trail")
 Before opening the Pull Request, you must collect a summary of the conversion process from the Orchestrator's logs. This summary must include:
@@ -79,7 +85,9 @@ Before opening the Pull Request, you must collect a summary of the conversion pr
 
 ## 3. Creating the Pull Request (PR)
 Call the `mcp__github__create_pull_request` MCP tool with:
-- `owner` and `repo` derived from the remote URL (`git remote get-url origin`)
+- `owner` and `repo` — the Converter repo's own owner/repo. The origin URL
+  (`git remote get-url origin` inside the Converter working tree) resolves
+  to the correct target; use that. Never substitute another repo.
 - `title`: `feat: Add <StrategyName> Strategy`
 - `head`: `feat/<strategy_name_snake_case>`
 - `base`: `main`
@@ -125,7 +133,7 @@ The body MUST follow this structured format:
 | No Fake State (position proxies) | PASS / FAIL |
 
 ### Statistical Gate — Evaluation Artifacts
-*Rendered automatically by the statistical gate on BTC/USDT 15m, 2018-01-01 → 2023-12-31. Paths are relative to the rl-training repo root so GitHub renders them inline.*
+*Rendered automatically by the statistical gate on BTC/USDT 15m, 2018-01-01 → 2023-12-31. Paths are relative to the Converter repo root so GitHub renders them inline.*
 
 | Metric | Value |
 |---|---|
@@ -164,9 +172,9 @@ If the PR body shows literal `\n` text, treat that as a formatting failure and f
 - Output the direct PR link.
 - **Explicit Message:** "The PR is ready. I have included a full 'Audit Trail' in the PR description to help you understand the conversion logic. Please perform a Code Review."
 - **CRITICAL — Output Token:** You MUST end your response with exactly one of:
-  - `INTEGRATION_PASS` — ONLY if the branch was pushed to remote AND `mcp__github__create_pull_request` returned a PR URL
+  - `INTEGRATION_PASS` — ONLY if `mcp__github__create_branch` succeeded, `mcp__github__push_files` (or per-file `create_or_update_file`) succeeded, AND `mcp__github__create_pull_request` returned a PR URL
   - `INTEGRATION_FALLBACK` — if the GitHub MCP was unavailable and you provided manual paste instructions instead
-  The Orchestrator uses this token to determine the registry status.
+  `main.py` uses this token to mark the strategy completed.
 
 # Constraints
 - Do NOT merge.

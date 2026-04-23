@@ -244,6 +244,14 @@ def _deterministic_rejection(raw: str, meta: StrategyMetadata | None) -> Optiona
     if total_trades is not None and total_trades < 150:
         return f"Rejected before selector: total_trades={total_trades} is below the RL minimum of 150."
 
+    profit_factor = meta.backtest_metrics.profit_factor if meta else None
+    if profit_factor is not None and profit_factor < 1.0:
+        return (
+            f"REJECTED: backtest is unprofitable "
+            f"(profit_factor={profit_factor:.3f} < 1.0). "
+            "RL target is profitable signal generators only."
+        )
+
     fake_state = _contains_any(raw, FAKE_STATE_KEYWORDS)
     if fake_state:
         return f"Rejected before selector: signal logic depends on self-evaluation state via `{fake_state}`."
