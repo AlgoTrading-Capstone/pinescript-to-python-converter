@@ -40,8 +40,12 @@ _EXPECTED_AGENT_LOGS = (
     "agent_transpiler.md",
     "agent_validator.md",
     "agent_test_generator.md",
-    "agent_integration.md",
 )
+
+
+def line_has_integration_token(line: str) -> bool:
+    """True when an integration completion token appears in orchestrator output."""
+    return any(token in line for token in _INTEGRATION_SUCCESS_TOKENS)
 
 
 def _completion_token_from_disk(output_dir: Path) -> str | None:
@@ -163,6 +167,7 @@ def run_orchestrator(
         current_agent = "ORCHESTRATOR"
         killed_by_watchdog = threading.Event()
         completion_token_found = False
+        unexpected_integration_token = False
         seen_log_tokens: set[str] = set()
 
         def _kill_on_timeout():
@@ -185,6 +190,12 @@ def run_orchestrator(
                     if token in stripped:
                         completion_token_found = True
                         strat_logger.info(f"Completion token detected: {token}")
+                if line_has_integration_token(stripped):
+                    unexpected_integration_token = True
+                    strat_logger.error(
+                        "Integration token appeared during conversion subprocess: %s",
+                        stripped,
+                    )
 
                 for token in _LOG_TOKENS:
                     if token in stripped:
@@ -225,6 +236,16 @@ def run_orchestrator(
         if killed_by_watchdog.is_set():
             strat_logger.error("Orchestrator timed out after 1500s.")
             print_error("Orchestrator timed out after 25 minutes.")
+            return False, run_dir
+
+        if unexpected_integration_token:
+            strat_logger.error(
+                "Orchestrator violated gate-then-integrate contract by emitting "
+                "an integration token during conversion."
+            )
+            print_error(
+                "Orchestrator emitted an integration token before the statistical gate."
+            )
             return False, run_dir
 
         missing_log_tokens = _LOG_TOKENS - seen_log_tokens

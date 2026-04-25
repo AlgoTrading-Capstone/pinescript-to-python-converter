@@ -32,7 +32,7 @@ _THEME = Theme(
     }
 )
 
-console = Console(theme=_THEME)
+console = Console(theme=_THEME, safe_box=True, legacy_windows=False)
 
 _VERDICT_STYLES = {
     "[RECOMMENDED]": "good",
@@ -103,6 +103,24 @@ def build_table(
 
 
 def print_table(table: Table) -> None:
+    console.print(table)
+
+
+def print_artifact_summary(title: str, rows: Iterable[tuple[str, object]]) -> None:
+    table = Table(
+        title=title,
+        box=box.SIMPLE_HEAVY,
+        header_style="bold",
+        show_lines=False,
+        expand=True,
+    )
+    table.add_column("Item", style="muted", no_wrap=True)
+    table.add_column("Location / Value", style="path")
+    for label, value in rows:
+        if value is None or value == "":
+            continue
+        table.add_row(str(label), str(value))
+    console.print()
     console.print(table)
 
 

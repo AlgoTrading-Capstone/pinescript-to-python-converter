@@ -29,7 +29,7 @@ def _now_iso() -> str:
 def load_registry() -> dict:
     """Load the registry, purging any excluded placeholder files."""
     if REGISTRY_PATH.exists():
-        data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        data = json.loads(REGISTRY_PATH.read_text(encoding="utf-8-sig"))
         for key in _EXCLUDED_PINE_FILES:
             if key in data:
                 del data[key]

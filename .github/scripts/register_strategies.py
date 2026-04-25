@@ -50,7 +50,7 @@ if not REG_JSON_PATH.exists():
     )
     sys.exit(0)
 
-with REG_JSON_PATH.open("r", encoding="utf-8") as fh:
+with REG_JSON_PATH.open("r", encoding="utf-8-sig") as fh:
     reg_json: dict = json.load(fh)
 
 

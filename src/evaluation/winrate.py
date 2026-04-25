@@ -29,6 +29,17 @@ import numpy as np
 import pandas as pd
 
 
+def resolve_effective_positions(signals: pd.Series) -> pd.Series:
+    """Convert signal recommendations into evaluated target exposure.
+
+    ``HOLD`` means "keep current exposure" in ``BaseStrategy``.  The statistical
+    gate therefore needs to carry the previous LONG/SHORT/FLAT state forward
+    before detecting trade runs.  Leading HOLD values have no prior exposure and
+    resolve to FLAT.
+    """
+    return signals.replace("HOLD", pd.NA).ffill().fillna("FLAT")
+
+
 def compute_winrate(closes: pd.Series, signals: pd.Series) -> dict:
     """
     Compute win rate + trade stats for a single strategy signal series.
@@ -52,21 +63,23 @@ def compute_winrate(closes: pd.Series, signals: pd.Series) -> dict:
 
     closes_arr = closes.to_numpy(dtype=float)
 
-    # Run-length encoding: group consecutive identical signals
-    run_id = (signals != signals.shift()).cumsum()
+    effective_signals = resolve_effective_positions(signals)
+
+    # Run-length encoding: group consecutive identical target positions
+    run_id = (effective_signals != effective_signals.shift()).cumsum()
 
     runs = pd.DataFrame(
         {
-            "signal": signals.groupby(run_id).first(),
+            "signal": effective_signals.groupby(run_id).first(),
             "start_iloc": (
-                signals.groupby(run_id)
+                effective_signals.groupby(run_id)
                 .apply(lambda g: g.index[0])
-                .map(signals.index.get_loc)
+                .map(effective_signals.index.get_loc)
             ),
             "end_iloc": (
-                signals.groupby(run_id)
+                effective_signals.groupby(run_id)
                 .apply(lambda g: g.index[-1])
-                .map(signals.index.get_loc)
+                .map(effective_signals.index.get_loc)
             ),
         }
     ).reset_index(drop=True)
@@ -124,18 +137,19 @@ def compute_trades(closes: pd.Series, signals: pd.Series) -> pd.DataFrame:
     closes_arr = closes.to_numpy(dtype=float)
     index = signals.index
 
-    run_id = (signals != signals.shift()).cumsum()
+    effective_signals = resolve_effective_positions(signals)
+    run_id = (effective_signals != effective_signals.shift()).cumsum()
     runs = pd.DataFrame({
-        "signal": signals.groupby(run_id).first(),
+        "signal": effective_signals.groupby(run_id).first(),
         "start_iloc": (
-            signals.groupby(run_id)
+            effective_signals.groupby(run_id)
             .apply(lambda g: g.index[0])
-            .map(signals.index.get_loc)
+            .map(effective_signals.index.get_loc)
         ),
         "end_iloc": (
-            signals.groupby(run_id)
+            effective_signals.groupby(run_id)
             .apply(lambda g: g.index[-1])
-            .map(signals.index.get_loc)
+            .map(effective_signals.index.get_loc)
         ),
     }).reset_index(drop=True)
     active_runs = runs[runs["signal"].isin(["LONG", "SHORT"])]

@@ -13,6 +13,8 @@ from pathlib import Path
 DATA_DIR                = Path("data")
 REGISTRY_PATH           = DATA_DIR / "strategies_registry.json"
 CATEGORY_COUNTS_PATH    = DATA_DIR / "category_counts.json"
+SCRAPE_REJECTIONS_PATH  = DATA_DIR / "scrape_rejections.json"
+SOURCE_QUALITY_PATH     = DATA_DIR / "source_quality.json"
 INPUT_DIR               = Path("input")
 ARCHIVE_DIR             = Path("archive")
 OUTPUT_DIR              = Path("output")

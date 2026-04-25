@@ -80,7 +80,7 @@ def _load_strategy_metadata(pine_file: Path) -> Optional[StrategyMetadata]:
     if not sidecar.exists():
         return None
     try:
-        raw = json.loads(sidecar.read_text(encoding="utf-8"))
+        raw = json.loads(sidecar.read_text(encoding="utf-8-sig"))
         if not isinstance(raw, dict):
             raise ValueError("Sidecar root is not a JSON object.")
 
@@ -241,8 +241,8 @@ def _detect_heavy_historical_loop(raw: str) -> Optional[str]:
 
 def _deterministic_rejection(raw: str, meta: StrategyMetadata | None) -> Optional[str]:
     total_trades = meta.backtest_metrics.total_trades if meta else None
-    if total_trades is not None and total_trades < 150:
-        return f"Rejected before selector: total_trades={total_trades} is below the RL minimum of 150."
+    if total_trades is not None and total_trades < 30:
+        return f"Rejected before selector: total_trades={total_trades} is below the RL minimum of 30."
 
     profit_factor = meta.backtest_metrics.profit_factor if meta else None
     if profit_factor is not None and profit_factor < 1.0:

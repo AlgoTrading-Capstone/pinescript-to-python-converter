@@ -98,7 +98,7 @@ def _parse_safe_name_from_path(report_path: Path) -> str:
 
 def _load_report(path: Path) -> Entry | None:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
     except Exception as exc:
         print(f"[warn] skipping unreadable {path}: {exc}", file=sys.stderr)
         return None

@@ -27,7 +27,7 @@ def load_category_counts() -> dict[str, int]:
         return _empty_counts()
 
     try:
-        raw = json.loads(CATEGORY_COUNTS_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(CATEGORY_COUNTS_PATH.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError) as exc:
         logger.warning(f"Failed to load category counts: {exc}")
         return _empty_counts()

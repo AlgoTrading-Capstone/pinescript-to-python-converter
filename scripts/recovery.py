@@ -1,85 +1,168 @@
-"""Registry recovery helper for the 2026-04-23 BB+RSI false-failure run.
+"""Recover pipeline state after over-strict filtering or interrupted runs.
 
-The half-applied refactor on `feat/supertrend_ema_rejection_strategy` made
-`main.py` exit 1 on what was actually a successful conversion. Before exiting,
-the old failure path in main.py bumped ``BB-RSI-1-2-Rentable-en-4-horas.pine``
-to ``status="failed"`` with ``conversion_attempts=1``. The strategy code, tests,
-and PR #42 are all real; only the registry drifted.
+By default this is a dry run. Pass ``--apply`` to write changes.
 
-This one-off script does two things:
+Current recovery actions:
+- roll transient ``selected`` entries back to ``evaluated``;
+- remove the six candidates wrongly rejected by the old ``total_trades < 150``
+  precheck from the registry;
+- remove their TradingView URLs from ``data/seen_urls.json``;
+- copy their archived ``.pine`` and ``.meta.json`` bundles back into ``input/``
+  so the next pipeline run treats them as fresh candidates.
 
-1. **General zombie sweep** — any entry stuck in the transient ``"selected"``
-   status is reset to ``"evaluated"`` (same rollback ``main.py`` runs on
-   Ctrl+C).
-2. **Targeted BB-RSI reset** — flip
-   ``BB-RSI-1-2-Rentable-en-4-horas.pine`` back to ``"evaluated"``, clear
-   ``conversion_attempts`` / ``failed_at``, so the next pipeline run treats it
-   as a fresh candidate. With the new ``max_drawdown_pct > 50.0`` deterministic
-   rule in :func:`src.pipeline.evaluator._deterministic_rejection`, its 107.32%
-   drawdown will cause it to be rejected before the selector LLM is even
-   called — which is the correct outcome.
-
-Usage:
-
-.. code-block:: bash
-
-    .venv/Scripts/python.exe scripts/recovery.py            # dry-run, prints plan
-    .venv/Scripts/python.exe scripts/recovery.py --apply    # write changes
+The archive copies are intentionally kept in place as audit evidence.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 REGISTRY_PATH = Path("data/strategies_registry.json")
-BB_RSI_KEY = "BB-RSI-1-2-Rentable-en-4-horas.pine"
+SEEN_URLS_PATH = Path("data/seen_urls.json")
+INPUT_DIR = Path("input")
+REJECTED_ARCHIVE_DIR = Path("archive/rejected")
+
+PROMOTED_6 = (
+    "BEST-Supertrend-Strategy.pine",
+    "Bollinger-Matrix-ULTRA-inverted.pine",
+    "EMA-Pullback-Speed-Strategy.pine",
+    "ms-hypersupertrend.pine",
+    "Pro-Swing-Guard-200-EMA-SuperTrend-10-5-Simple-Swing-System.pine",
+    "REAL-STRATEGY-Dow-Factor-MFI-RSI-DVOG-Strategy.pine",
+)
+
+
+@dataclass(frozen=True)
+class PlannedAction:
+    kind: str
+    target: str
+    detail: str
+    source: str | None = None
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def plan_changes(registry: dict) -> list[tuple[str, str, dict]]:
-    """Return a list of (key, reason, patch) tuples describing what will change."""
-    changes: list[tuple[str, str, dict]] = []
+def _read_json(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return default
 
-    for key, rec in registry.items():
+
+def _write_json(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _archive_bundle_dir(pine_name: str) -> Path:
+    return REJECTED_ARCHIVE_DIR / Path(pine_name).stem
+
+
+def _archived_meta_path(pine_name: str) -> Path:
+    return _archive_bundle_dir(pine_name) / Path(pine_name).with_suffix(".meta.json").name
+
+
+def _archived_pine_path(pine_name: str) -> Path:
+    return _archive_bundle_dir(pine_name) / pine_name
+
+
+def _load_archived_url(pine_name: str) -> str | None:
+    meta_path = _archived_meta_path(pine_name)
+    meta = _read_json(meta_path, {})
+    url = meta.get("url") if isinstance(meta, dict) else None
+    return str(url) if url else None
+
+
+def _plan(
+    registry: dict[str, dict[str, Any]],
+    seen_urls: set[str],
+) -> list[PlannedAction]:
+    actions: list[PlannedAction] = []
+
+    for key, rec in sorted(registry.items()):
         if rec.get("status") == "selected":
-            changes.append((
+            actions.append(PlannedAction(
+                "rollback_selected",
                 key,
-                "zombie 'selected' status — roll back to 'evaluated'",
-                {"status": "evaluated", "rolled_back_at": _now()},
+                "reset transient selected status to evaluated",
             ))
 
-    bb_rsi = registry.get(BB_RSI_KEY)
-    if bb_rsi and bb_rsi.get("status") == "failed":
-        changes.append((
-            BB_RSI_KEY,
-            f"false-failure from 2026-04-23 run "
-            f"(attempts={bb_rsi.get('conversion_attempts', 0)}) — reset to 'evaluated'",
-            {
-                "status": "evaluated",
-                "conversion_attempts": 0,
-                "failed_at": None,
-                "rolled_back_at": _now(),
-            },
-        ))
+    for pine_name in PROMOTED_6:
+        if pine_name in registry:
+            actions.append(PlannedAction(
+                "remove_registry_entry",
+                pine_name,
+                "remove wrongly precheck-rejected promoted candidate",
+            ))
 
-    return changes
+        url = _load_archived_url(pine_name)
+        if url and url in seen_urls:
+            actions.append(PlannedAction(
+                "remove_seen_url",
+                url,
+                f"allow {pine_name} to be discovered again",
+            ))
+
+        pine_src = _archived_pine_path(pine_name)
+        pine_dest = INPUT_DIR / pine_name
+        if pine_src.exists() and not pine_dest.exists():
+            actions.append(PlannedAction(
+                "restore_file",
+                str(pine_dest),
+                f"copy {pine_src} to input/",
+                str(pine_src),
+            ))
+
+        meta_src = _archived_meta_path(pine_name)
+        meta_dest = INPUT_DIR / meta_src.name
+        if meta_src.exists() and not meta_dest.exists():
+            actions.append(PlannedAction(
+                "restore_file",
+                str(meta_dest),
+                f"copy {meta_src} to input/",
+                str(meta_src),
+            ))
+
+    return actions
 
 
-def apply_changes(registry: dict, changes: list[tuple[str, str, dict]]) -> None:
-    for key, _reason, patch in changes:
-        rec = registry[key]
-        for k, v in patch.items():
-            if v is None:
-                rec.pop(k, None)
-            else:
-                rec[k] = v
+def _apply(
+    registry: dict[str, dict[str, Any]],
+    seen_urls: set[str],
+    actions: list[PlannedAction],
+) -> None:
+    for action in actions:
+        if action.kind == "rollback_selected":
+            rec = registry[action.target]
+            rec["status"] = "evaluated"
+            rec["rolled_back_at"] = _now()
+        elif action.kind == "remove_registry_entry":
+            registry.pop(action.target, None)
+        elif action.kind == "remove_seen_url":
+            seen_urls.discard(action.target)
+        elif action.kind == "restore_file":
+            if action.source is None:
+                raise ValueError(f"Missing source for restore action: {action.target}")
+            dest = Path(action.target)
+            src = Path(action.source)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+        else:
+            raise ValueError(f"Unknown recovery action: {action.kind}")
 
 
 def main() -> int:
@@ -87,7 +170,7 @@ def main() -> int:
     parser.add_argument(
         "--apply",
         action="store_true",
-        help="Write changes to data/strategies_registry.json. Without this flag, runs dry.",
+        help="Write registry/seen_urls changes and restore files to input/.",
     )
     args = parser.parse_args()
 
@@ -95,29 +178,34 @@ def main() -> int:
         print(f"ERROR: {REGISTRY_PATH} not found. Run this from the repo root.", file=sys.stderr)
         return 2
 
-    registry = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
-    changes = plan_changes(registry)
+    registry = _read_json(REGISTRY_PATH, {})
+    if not isinstance(registry, dict):
+        print(f"ERROR: {REGISTRY_PATH} does not contain a JSON object.", file=sys.stderr)
+        return 2
 
-    if not changes:
-        print("No changes needed — registry is clean.")
+    raw_seen = _read_json(SEEN_URLS_PATH, [])
+    seen_urls = {str(url) for url in raw_seen} if isinstance(raw_seen, list) else set()
+
+    actions = _plan(registry, seen_urls)
+    if not actions:
+        print("No recovery actions needed.")
         return 0
 
-    print(f"Planned changes ({len(changes)}):")
-    for key, reason, patch in changes:
-        print(f"  - {key}")
-        print(f"      reason: {reason}")
-        print(f"      patch : {patch}")
+    print(f"Planned recovery actions ({len(actions)}):")
+    for action in actions:
+        print(f"  - [{action.kind}] {action.target}")
+        print(f"      {action.detail}")
 
     if not args.apply:
-        print("\nDry run — pass --apply to write changes.")
+        print("\nDry run - pass --apply to write changes.")
         return 0
 
-    apply_changes(registry, changes)
-    REGISTRY_PATH.write_text(
-        json.dumps(registry, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    print(f"\nApplied {len(changes)} change(s) to {REGISTRY_PATH}.")
+    _apply(registry, seen_urls, actions)
+    _write_json(REGISTRY_PATH, registry)
+    _write_json(SEEN_URLS_PATH, sorted(seen_urls))
+    print(f"\nApplied {len(actions)} recovery action(s).")
+    print(f"Updated {REGISTRY_PATH} and {SEEN_URLS_PATH}.")
+    print(f"Restored available promoted-six bundles to {INPUT_DIR}/.")
     return 0
 
 

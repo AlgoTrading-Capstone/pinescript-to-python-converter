@@ -71,11 +71,17 @@ class TestParseMetricToFloat:
     def test_thousands_comma(self):
         assert _parse_metric_to_float("1,200.5") == 1200.5
 
+    def test_decimal_comma(self):
+        assert _parse_metric_to_float("1,5%") == 1.5
+
     def test_k_suffix_lowercase(self):
         assert _parse_metric_to_float("1.5k") == 1500.0
 
     def test_k_suffix_uppercase(self):
         assert _parse_metric_to_float("2.3K") == 2300.0
+
+    def test_m_suffix_uppercase(self):
+        assert _parse_metric_to_float("1.2M") == 1200000.0
 
     def test_parenthesis_negation(self):
         # Drawdown is sometimes shown as "(15.3%)"

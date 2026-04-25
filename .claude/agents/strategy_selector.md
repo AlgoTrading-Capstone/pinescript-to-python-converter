@@ -61,8 +61,12 @@ If the file is unavailable, assume zero counts and mention that briefly in `reco
 If ANY of the following is true, reject immediately:
 
 ## Signal Density Guardrail (from BACKTEST_METADATA — only apply when the field is NOT `N/A`)
-- **Insufficient Signal Density:** `total_trades < 150`.
-  The RL engine needs continuous directional signal flow, not a strategy that only fires on rare anomalies.
+- **Insufficient Signal Density:** `total_trades < 30`.
+  The RL engine needs enough closed trades to avoid pure anomaly strategies.
+  Reject immediately only below 30 trades.
+- **Low Signal Density Soft Penalty:** `30 <= total_trades < 150`.
+  Do NOT reject solely for this range. Apply the scoring penalty below and
+  mention the lower sample count in `recommendation_reason`.
 - **Unprofitable backtest:** `profit_factor < 1.0` (when the field is NOT `N/A`).
   A strategy whose gross loss exceeds gross profit over its own author-tuned
   window has no positive edge for RL to learn from. Write `REJECTED` in
@@ -123,6 +127,7 @@ For instant rejection:
 -1  Uses `request.security`
 -1  Uses `barstate.isconfirmed` or `barstate.isrealtime`
 -3  Generic EMA/SMA crossover with little distinctive edge
+-2  `30 <= total_trades < 150` in BACKTEST_METADATA; lower sample count, but not a rejection by itself
 +2  Unique approach: volume profile, candlestick pattern structure, volatility breakout, or similarly distinctive logic
 -1  Assigned category already has `>= 5` strategies in `data/category_counts.json`
 -3  Assigned category already has `>= 10` strategies in `data/category_counts.json`

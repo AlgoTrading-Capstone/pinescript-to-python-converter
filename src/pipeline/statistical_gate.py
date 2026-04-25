@@ -9,7 +9,9 @@ The gate runs four checks in order — any failure short-circuits:
   1. Load OHLCV from cache (downloaded once via src/evaluation/ohlcv.py).
   2. Execute the strategy's vectorized generate_all_signals.
   3. Variance: LONG+SHORT signals must cover ≥MIN_SIGNAL_ACTIVITY_PCT of bars.
-  4. Win rate: ≥MIN_WIN_RATE over ≥MIN_TRADE_COUNT trades.
+  4. Expectancy lane: avg PnL must be positive, then win rate assigns
+     "strict" (>=MIN_WIN_RATE) or "research" (>=35%) over
+     >=MIN_TRADE_COUNT trades.
 
 On PASS: write signal_heatmap.png + stats_report.json into <output_dir>/eval/,
 populate the `evaluation` block on the registry entry, and return a GateResult
@@ -48,7 +50,6 @@ from src.evaluation.variance import signal_activity_pct
 from src.evaluation.winrate import (
     compute_trades,
     compute_winrate,
-    passes_winrate,
     render_winrate_curve,
 )
 from src.pipeline import (
@@ -65,6 +66,7 @@ from src.utils.timeframes import timeframe_to_minutes
 
 
 logger = logging.getLogger("runner.gate")
+RESEARCH_MIN_WIN_RATE = 0.35
 
 
 @dataclass
@@ -76,6 +78,7 @@ class GateResult:
     evaluated_at: str
     eval_window: dict[str, Any]
     lookback: dict[str, Any]
+    lane: Optional[str] = None
     variance: dict[str, Any] = field(default_factory=dict)
     winrate: dict[str, Any] = field(default_factory=dict)
     signal_counts: dict[str, int] = field(default_factory=dict)
@@ -86,9 +89,11 @@ class GateResult:
         return {
             "passed": self.passed,
             "reason": self.reason,
+            "lane": self.lane,
             "signal_activity_pct": self.variance.get("signal_activity_pct", 0.0),
             "win_rate": self.winrate.get("win_rate", 0.0),
             "trade_count": self.winrate.get("total_trades", 0),
+            "avg_pnl": self.winrate.get("avg_pnl", 0.0),
             "evaluated_at": self.evaluated_at,
         }
 
@@ -133,7 +138,11 @@ def _write_artifacts(
 
     if trades is not None and not trades.empty:
         curve_path = eval_dir / "winrate_curve.png"
-        verdict = "PASS" if result.passed else f"REJECT ({result.reason or 'unknown'})"
+        verdict = (
+            f"PASS {result.lane.upper()}"
+            if result.passed and result.lane
+            else f"REJECT ({result.reason or 'unknown'})"
+        )
         rendered = render_winrate_curve(
             trades=trades,
             output_path=curve_path,
@@ -145,8 +154,8 @@ def _write_artifacts(
             )
 
     stats_path = eval_dir / "stats_report.json"
-    stats_path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
     result.artifacts["stats_report"] = str(stats_path.relative_to(eval_dir.parent))
+    stats_path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
 
 
 def run_statistical_gate(
@@ -213,6 +222,8 @@ def run_statistical_gate(
         return base_result
 
     base_result.signal_counts = count_by_signal(signals)
+    winrate_stats = compute_winrate(ohlcv_df["close"], signals)
+    trades_df = compute_trades(ohlcv_df["close"], signals)
 
     # Step 3 — variance check
     activity_pct = signal_activity_pct(signals)
@@ -227,34 +238,66 @@ def run_statistical_gate(
             f"variance_below_threshold: {activity_pct:.2%} < {MIN_SIGNAL_ACTIVITY_PCT:.0%}"
         )
         logger.info(f"[GATE] {strategy.name} — {base_result.reason}")
-        _write_artifacts(eval_dir, base_result, signals, ohlcv_df, strategy.name)
+        base_result.winrate = {
+            "win_rate": winrate_stats["win_rate"],
+            "total_trades": winrate_stats["total_trades"],
+            "avg_pnl": winrate_stats["avg_pnl"],
+            "min_trades_threshold": MIN_TRADE_COUNT,
+            "strict_winrate_threshold": MIN_WIN_RATE,
+            "research_winrate_threshold": RESEARCH_MIN_WIN_RATE,
+            "positive_expectancy_required": True,
+            "expectancy_passed": winrate_stats["avg_pnl"] > 0.0,
+            "passed": False,
+            "informational_only": True,
+        }
+        _write_artifacts(
+            eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,
+        )
         return base_result
 
-    # Step 4 — win-rate check
-    winrate_stats = compute_winrate(ohlcv_df["close"], signals)
-    trades_df = compute_trades(ohlcv_df["close"], signals)
-    winrate_passed = passes_winrate(
-        winrate_stats,
-        min_win_rate=MIN_WIN_RATE,
-        min_trades=MIN_TRADE_COUNT,
+    # Step 4 - expectancy lane check.
+    total_trades = int(winrate_stats["total_trades"])
+    win_rate = float(winrate_stats["win_rate"])
+    avg_pnl = float(winrate_stats["avg_pnl"])
+    has_enough_trades = total_trades >= MIN_TRADE_COUNT
+    has_positive_expectancy = avg_pnl > 0.0
+    strict_passed = (
+        has_enough_trades
+        and has_positive_expectancy
+        and win_rate >= MIN_WIN_RATE
     )
+    research_passed = (
+        has_enough_trades
+        and has_positive_expectancy
+        and RESEARCH_MIN_WIN_RATE <= win_rate < MIN_WIN_RATE
+    )
+    lane = "strict" if strict_passed else "research" if research_passed else None
     base_result.winrate = {
-        "win_rate": winrate_stats["win_rate"],
-        "total_trades": winrate_stats["total_trades"],
-        "avg_pnl": winrate_stats["avg_pnl"],
+        "win_rate": win_rate,
+        "total_trades": total_trades,
+        "avg_pnl": avg_pnl,
         "min_trades_threshold": MIN_TRADE_COUNT,
-        "min_winrate_threshold": MIN_WIN_RATE,
-        "passed": winrate_passed,
+        "strict_winrate_threshold": MIN_WIN_RATE,
+        "research_winrate_threshold": RESEARCH_MIN_WIN_RATE,
+        "positive_expectancy_required": True,
+        "expectancy_passed": has_positive_expectancy,
+        "strict_passed": strict_passed,
+        "research_passed": research_passed,
+        "passed": lane is not None,
     }
-    if not winrate_passed:
-        if winrate_stats["total_trades"] < MIN_TRADE_COUNT:
+    if lane is None:
+        if total_trades < MIN_TRADE_COUNT:
             base_result.reason = (
-                f"too_few_trades: {winrate_stats['total_trades']} < {MIN_TRADE_COUNT}"
+                f"too_few_trades: {total_trades} < {MIN_TRADE_COUNT}"
+            )
+        elif avg_pnl <= 0.0:
+            base_result.reason = (
+                f"non_positive_expectancy: avg_pnl={avg_pnl:.6f} <= 0"
             )
         else:
             base_result.reason = (
                 f"winrate_below_threshold: "
-                f"{winrate_stats['win_rate']:.1%} < {MIN_WIN_RATE:.0%}"
+                f"{win_rate:.1%} < {RESEARCH_MIN_WIN_RATE:.0%}"
             )
         logger.info(f"[GATE] {strategy.name} — {base_result.reason}")
         _write_artifacts(
@@ -264,10 +307,12 @@ def run_statistical_gate(
 
     # All checks passed
     base_result.passed = True
+    base_result.lane = lane
     logger.info(
-        f"[GATE] {strategy.name} PASSED — "
+        f"[GATE] {strategy.name} PASSED ({lane}) — "
         f"activity={activity_pct:.1%}, "
-        f"winrate={winrate_stats['win_rate']:.1%} over {winrate_stats['total_trades']} trades"
+        f"winrate={win_rate:.1%} over {total_trades} trades, "
+        f"avg_pnl={avg_pnl:.4%}"
     )
     _write_artifacts(
         eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,

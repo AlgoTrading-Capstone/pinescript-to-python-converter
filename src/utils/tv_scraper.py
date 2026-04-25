@@ -24,6 +24,8 @@ import re
 import time
 import logging
 import subprocess
+import shutil
+import tempfile
 import urllib.request
 import json
 from pathlib import Path
@@ -164,12 +166,34 @@ def _parse_metric_to_float(raw_str: Optional[str]) -> Optional[float]:
     if negative_parens and not s.startswith("-"):
         s = "-" + s
 
-    # Strip visual noise characters.
-    s = s.replace("%", "").replace("$", "").replace(",", "").strip()
+    # Strip visual noise characters while preserving separators until we know
+    # whether comma means decimal or thousands.
+    s = s.replace("%", "").replace("$", "").strip()
 
-    k_suffix = s.upper().endswith("K")
-    if k_suffix:
+    suffix_multipliers = {
+        "K": 1_000.0,
+        "M": 1_000_000.0,
+        "B": 1_000_000_000.0,
+    }
+    multiplier = 1.0
+    suffix = s[-1:].upper()
+    if suffix in suffix_multipliers:
+        multiplier = suffix_multipliers[suffix]
         s = s[:-1].strip()
+
+    if "," in s:
+        if "." in s and s.rfind(",") > s.rfind("."):
+            # European style: "1.234,56" -> "1234.56".
+            s = s.replace(".", "").replace(",", ".")
+        elif "." in s:
+            # US style: "1,234.56" -> "1234.56".
+            s = s.replace(",", "")
+        else:
+            comma_parts = s.split(",")
+            if len(comma_parts) == 2 and len(comma_parts[1]) != 3:
+                s = ".".join(comma_parts)
+            else:
+                s = s.replace(",", "")
 
     match = _NUMERIC_RE.search(s)
     if not match:
@@ -186,7 +210,7 @@ def _parse_metric_to_float(raw_str: Optional[str]) -> Optional[float]:
 
     try:
         value = float(signed_str)
-        return value * 1000.0 if k_suffix else value
+        return value * multiplier
     except ValueError:
         return None
 
@@ -214,6 +238,9 @@ _LISTING_LOAD_MORE_XPATHS = [
 ]
 _SCRIPT_URL_RE   = re.compile(r"/script/[A-Za-z0-9]+-[^/]+/$")
 _SCRIPT_PARTS_RE = re.compile(r"/script/([A-Za-z0-9]+)-([^/]+)/?$")
+_PINE_STRATEGY_RE = re.compile(r"\bstrategy\s*\(", re.IGNORECASE)
+_PINE_VERSION_RE = re.compile(r"^\s*//\s*@version\s*=", re.IGNORECASE | re.MULTILINE)
+_CLIPBOARD_SENTINEL = "__TV_SCRAPER_EMPTY__"
 
 # ── Individual script page ────────────────────────────────────────────────────
 
@@ -290,19 +317,47 @@ _PINE_FACADE_URL = (
 _PROJECT_INPUT_DIR = str(Path(__file__).resolve().parent.parent.parent / "input")
 
 
+def _looks_like_pine_strategy(source: Optional[str]) -> bool:
+    if not source:
+        return False
+    stripped = source.strip()
+    return (
+        len(stripped) >= 300
+        and len(stripped.splitlines()) >= 5
+        and bool(_PINE_VERSION_RE.search(stripped))
+        and bool(_PINE_STRATEGY_RE.search(stripped))
+    )
+
+
 class TradingViewScraper:
     def __init__(self, headless: bool = False):
-        self.options = Options()
+        self.headless = headless
+        self._profile_dir = tempfile.mkdtemp(prefix="tv_scraper_chrome_")
+        self.options = self._build_options(headless=headless)
+        self.driver = None
+
+    def _build_options(self, headless: bool) -> Options:
+        options = Options()
         if headless:
-            self.options.add_argument("--headless=new")
-        self.options.add_argument("--disable-blink-features=AutomationControlled")
-        self.options.add_argument(
+            options.add_argument("--headless=new")
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-default-browser-check")
+        options.add_argument("--no-first-run")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--remote-debugging-port=0")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument(f"--user-data-dir={self._profile_dir}")
+        options.add_argument(
             "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
         )
-        self.options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        self.options.add_experimental_option("useAutomationExtension", False)
-        self.driver = None
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("useAutomationExtension", False)
+        return options
 
     # ── Driver lifecycle ──────────────────────────────────────────────────────
 
@@ -336,8 +391,10 @@ class TradingViewScraper:
                     self.driver.quit = lambda: None
                 except Exception:
                     pass
-                self.driver = None
-            logger.info("WebDriver closed.")
+        if self._profile_dir:
+            shutil.rmtree(self._profile_dir, ignore_errors=True)
+        self.driver = None
+        logger.info("WebDriver closed.")
 
     def __enter__(self):
         self.start_driver()
@@ -513,9 +570,11 @@ class TradingViewScraper:
         """
         # 1. Pine Facade API (no browser needed)
         source = self._fetch_via_api(strategy_url)
-        if source:
+        if _looks_like_pine_strategy(source):
             logger.info(f"[API] Got {len(source)} chars.")
             return source
+        if source:
+            logger.info(f"[API] Ignored non-strategy source ({len(source)} chars).")
 
         # 2. Browser-based extraction
         if not self.driver:
@@ -532,21 +591,27 @@ class TradingViewScraper:
 
         # 3. Clipboard intercept: inject interceptor then click copy button
         source = self._extract_via_clipboard_intercept()
-        if source:
+        if _looks_like_pine_strategy(source):
             logger.info(f"[CLIP-JS] Got {len(source)} chars.")
             return source
+        if source:
+            logger.info(f"[CLIP-JS] Ignored non-strategy clipboard text ({len(source)} chars).")
 
         # 4. PowerShell clipboard read (Windows): click copy button then read OS clipboard
         source = self._extract_via_powershell_clipboard()
-        if source:
+        if _looks_like_pine_strategy(source):
             logger.info(f"[CLIP-PS] Got {len(source)} chars.")
             return source
+        if source:
+            logger.info(f"[CLIP-PS] Ignored non-strategy clipboard text ({len(source)} chars).")
 
         # 5. DOM JS fallback (works only when code is not virtual-scrolled)
         source = self._extract_code_js()
-        if source:
+        if _looks_like_pine_strategy(source):
             logger.info(f"[DOM-JS] Got {len(source)} chars.")
             return source
+        if source:
+            logger.info(f"[DOM-JS] Ignored non-strategy DOM text ({len(source)} chars).")
 
         raise NotImplementedError(
             f"Could not extract PineScript from:\n  {strategy_url}\n\n"
@@ -595,6 +660,11 @@ class TradingViewScraper:
 
         if not self.driver:
             self.start_driver()
+        try:
+            current_url = self.driver.current_url or ""
+        except Exception:
+            current_url = ""
+        if strategy_url not in current_url:
             try:
                 self.driver.get(strategy_url)
                 WebDriverWait(self.driver, _WAIT_TIMEOUT).until(
@@ -640,7 +710,7 @@ class TradingViewScraper:
         # 1. Hash the RAW source — source tag is NOT part of content identity.
         raw_hash = hashlib.sha256(pine_source.encode("utf-8")).hexdigest()
         if output_path.exists():
-            existing_text = output_path.read_text(encoding="utf-8")
+            existing_text = output_path.read_text(encoding="utf-8-sig")
             # Strip the source comment from the on-disk file before hashing so
             # that files saved with a tag compare equal to the same raw content
             # saved without one (e.g. manually-pasted vs. scraped duplicate).
@@ -1031,12 +1101,22 @@ class TradingViewScraper:
         characters), then falls back to utf-8 with errors='replace' so it never
         crashes on exotic bytes.
         """
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-Command", f"Set-Clipboard -Value '{_CLIPBOARD_SENTINEL}'"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except Exception as e:
+            logger.debug(f"PowerShell clipboard clear failed: {e}")
+
         # Re-click copy so the content is fresh in the OS clipboard.
         if not self._click_copy_button():
             return None
         time.sleep(1)
 
-        cmd = ["powershell", "-command", "Get-Clipboard"]
+        cmd = ["powershell", "-NoProfile", "-Command", "Get-Clipboard"]
 
         # Pass 1: cp1252 — native Windows codepage, handles accented chars natively.
         try:
@@ -1048,6 +1128,8 @@ class TradingViewScraper:
                 timeout=10,
             )
             content = result.stdout.strip()
+            if content == _CLIPBOARD_SENTINEL:
+                return None
             if content and len(content) > 10:
                 return content
         except (UnicodeDecodeError, UnicodeError):
@@ -1066,6 +1148,8 @@ class TradingViewScraper:
                 timeout=10,
             )
             content = result.stdout.strip()
+            if content == _CLIPBOARD_SENTINEL:
+                return None
             if content and len(content) > 10:
                 return content
         except Exception as e:

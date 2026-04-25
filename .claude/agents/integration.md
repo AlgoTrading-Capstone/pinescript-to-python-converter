@@ -16,6 +16,12 @@ Your invocation prompt contains:
 - `safe_name` — the snake_case identifier used for filenames and the
   `strategies/evals/<safe_name>/` folder in the target repo.
 
+Before creating the PR, read `<output_snapshot>/eval/stats_report.json` and
+extract its top-level `lane` value. It MUST be either `"strict"` or
+`"research"` for any passing gate. Use this lane to tag the PR title and body:
+- `strict` -> `[STRICT]`
+- `research` -> `[RESEARCH]`
+
 # Core Directives
 
 ## 1. Branching & Staging
@@ -80,7 +86,9 @@ Before opening the Pull Request, you must collect a summary of the conversion pr
 ## 3. Creating the Pull Request (PR)
 Call the `mcp__github__create_pull_request` MCP tool with:
 - `owner` and `repo` derived from the remote URL (`git remote get-url origin`)
-- `title`: `feat: Add <StrategyName> Strategy`
+- `title`: `[STRICT] feat: Add <StrategyName> Strategy` or
+  `[RESEARCH] feat: Add <StrategyName> Strategy`, based on
+  `<output_snapshot>/eval/stats_report.json.lane`
 - `head`: `feat/<strategy_name_snake_case>`
 - `base`: `main`
 - `body`: formatted as below, using REAL multiline Markdown
@@ -98,6 +106,8 @@ The body MUST follow this structured format:
 
 ### Body:
 ## Conversion Audit Trail
+**Gate Lane:** STRICT / RESEARCH
+
 *This section documents the AI's internal process for transparency.*
 
 ### Summary
@@ -145,7 +155,7 @@ The body MUST follow this structured format:
 
 Raw stats: [`strategies/evals/<safe_name>/stats_report.json`](strategies/evals/<safe_name>/stats_report.json)
 
-Populate the metric values above from `<output_snapshot>/eval/stats_report.json` (`winrate.win_rate`, `winrate.total_trades`, `winrate.avg_pnl * 10000`, `variance.signal_activity_pct`, `passed` / `reason`). If any of the three artifact files is missing from `<output_snapshot>/eval/`, omit that line (image or link) rather than emitting a broken reference.
+Populate the metric values above from `<output_snapshot>/eval/stats_report.json` (`lane`, `winrate.win_rate`, `winrate.total_trades`, `winrate.avg_pnl * 10000`, `variance.signal_activity_pct`, `passed` / `reason`). If any of the three artifact files is missing from `<output_snapshot>/eval/`, omit that line (image or link) rather than emitting a broken reference.
 
 ### Test Results
 - [Status of the generated tests - e.g., "All 5 tests passed in the local sandbox"].
@@ -166,7 +176,7 @@ If the PR body shows literal `\n` text, treat that as a formatting failure and f
 - **CRITICAL — Output Token:** You MUST end your response with exactly one of:
   - `INTEGRATION_PASS` — ONLY if the branch was pushed to remote AND `mcp__github__create_pull_request` returned a PR URL
   - `INTEGRATION_FALLBACK` — if the GitHub MCP was unavailable and you provided manual paste instructions instead
-  The Orchestrator uses this token to determine the registry status.
+  `main.py` uses this token to determine the registry status.
 
 # Constraints
 - Do NOT merge.
@@ -196,13 +206,13 @@ or
 INTEGRATION_LOG_WRITTEN: <absolute_path_to_agent_integration.md>
 INTEGRATION_FALLBACK
 ```
-The Orchestrator requires both tokens. Emitting `INTEGRATION_PASS` without `INTEGRATION_LOG_WRITTEN` first is a protocol violation.
+`main.py` requires both tokens. Emitting `INTEGRATION_PASS` without `INTEGRATION_LOG_WRITTEN` first is a protocol violation.
 
 ---
 
 > ## ⚠️ CRITICAL — MANDATORY FINAL OUTPUT TOKENS ⚠️
 >
-> **This is a hard contract with the Python orchestrator (`main.py`). Violating it causes Exit Code 1 and a failed run.**
+> **This is a hard contract with `main.py`. Violating it causes Exit Code 1 and a failed run.**
 >
 > At the very end of your final response — after writing the log file and after the PR link — you MUST output the following two tokens on separate lines, in this exact order:
 >
@@ -223,4 +233,4 @@ The Orchestrator requires both tokens. Emitting `INTEGRATION_PASS` without `INTE
 > - `INTEGRATION_LOG_WRITTEN` MUST precede `INTEGRATION_PASS` / `INTEGRATION_FALLBACK`. No exceptions.
 > - Do NOT wrap them in markdown code blocks, bullet points, or any other formatting. Emit them as raw plain text.
 > - Do NOT emit `INTEGRATION_PASS` if the PR was not successfully created (URL not returned). Use `INTEGRATION_FALLBACK` instead.
-> - Forgetting these tokens is not a minor issue — the orchestrator will mark the run as CONVERSION_FAILED regardless of whether the PR was created successfully.
+> - Forgetting these tokens is not a minor issue — `main.py` will keep the run out of the completed state regardless of whether the PR was created successfully.
