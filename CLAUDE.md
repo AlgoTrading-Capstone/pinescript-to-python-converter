@@ -67,8 +67,11 @@ pytest tests/strategies/test_<safe_name>_strategy.py -v
 pytest tests/integrations/ -v
 ```
 
-**Non-interactive invocations** (CI, cron, redirected stdin) bypass the menu
-and fall through to the existing scrape flow — no flag changes required.
+**Non-interactive invocations** (CI, cron) should pass `--scrape` to bypass
+the menu and run the auto-scrape flow directly. Bare `python main.py`
+**always** opens the menu, even when stdout/stdin look non-interactive
+(this avoids Windows-terminal `isatty()` false negatives that would
+otherwise drop straight into the scraper).
 
 **Dependencies:** `TA-Lib` requires the C library installed separately.
 `ccxt` powers candle boundary alignment and the statistical gate's OHLCV

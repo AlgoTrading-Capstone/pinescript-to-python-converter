@@ -131,6 +131,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_LOOKBACK_BARS,
         help=f"Lookback metadata for --manual. Default: {DEFAULT_LOOKBACK_BARS}.",
     )
+    parser.add_argument(
+        "--scrape",
+        action="store_true",
+        help="Skip the interactive menu and run the auto-scrape flow directly (for CI / cron).",
+    )
     return parser.parse_args(argv)
 
 
@@ -353,9 +358,10 @@ def main(argv: list[str] | None = None) -> None:
 
     try:
         # ------------------------------------------------------------------
-        # Decide mode: explicit --manual, or interactive menu when no flag
-        # was given. Non-TTY invocations fall back to the existing scrape
-        # flow so CI / cron jobs are unaffected.
+        # Decide mode:
+        #   --manual <path>  → manual conversion of that file
+        #   --scrape         → unattended auto-scrape (CI / cron)
+        #   no flag          → interactive Manual / Scrape menu
         # ------------------------------------------------------------------
         mode: str
         manual_source: Path | None
@@ -364,7 +370,7 @@ def main(argv: list[str] | None = None) -> None:
             mode = "manual"
             manual_source = args.manual
             manual_input_dir = INPUT_DIR
-        elif not sys.stdin.isatty():
+        elif args.scrape:
             mode = "scrape"
             manual_source = None
             manual_input_dir = INPUT_DIR

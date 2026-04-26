@@ -20,12 +20,12 @@ def _drop_pine(directory: Path, name: str, content: str = "// minimal pine") -> 
 # run_interactive_menu
 # -----------------------------------------------------------------------------
 @pytest.mark.parametrize("answer,expected", [
-    ("1", "manual"),
-    ("manual", "manual"),
-    ("M", "manual"),
-    ("2", "scrape"),
+    ("1", "scrape"),
     ("scrape", "scrape"),
     ("S", "scrape"),
+    ("2", "manual"),
+    ("manual", "manual"),
+    ("M", "manual"),
 ])
 def test_menu_returns_chosen_mode(monkeypatch, answer, expected):
     monkeypatch.setattr("builtins.input", lambda _prompt="": answer)

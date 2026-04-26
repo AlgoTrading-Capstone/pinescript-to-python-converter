@@ -36,8 +36,8 @@ def run_interactive_menu() -> Mode | None:
     print_banner("PineScript -> Python Converter")
     console.print()
     console.print("[accent]Choose a mode:[/accent]")
-    console.print("  [success]1[/success]) Manual    — convert a .pine you drop into [path]input/manual/[/path]")
-    console.print("  [success]2[/success]) Scrape    — auto-fetch from TradingView, evaluate, pick the best")
+    console.print("  [success]1[/success]) Scrape bot — auto-fetch from TradingView, evaluate, pick the best")
+    console.print("  [success]2[/success]) Manual     — convert a .pine you drop into [path]input/manual/[/path]")
     console.print("  [muted]q[/muted]) Quit")
     console.print()
     while True:
@@ -46,10 +46,10 @@ def run_interactive_menu() -> Mode | None:
         except (EOFError, KeyboardInterrupt):
             console.print()
             return None
-        if choice in ("1", "m", "manual"):
-            return "manual"
-        if choice in ("2", "s", "scrape"):
+        if choice in ("1", "s", "scrape"):
             return "scrape"
+        if choice in ("2", "m", "manual"):
+            return "manual"
         if choice in ("q", "quit", "exit"):
             return None
         print_warning("Please enter 1, 2, or q.")

@@ -13,9 +13,10 @@ This rule provides the high-level context of the TradingView to Python Transpila
   summaries (`src/cli/phase_reporter.print_phase_summary`).
 - **Scrape** — runs the existing auto-fetch + evaluate + select flow below.
 
-Non-interactive invocations (no TTY, redirected stdin) bypass the menu and
-fall through to the Scrape flow so CI / cron jobs are unaffected.
-`--manual <path>` still works for fully-scripted manual conversions.
+For unattended runs (CI, cron) pass `--scrape` to skip the menu directly.
+`--manual <path>` still works for fully-scripted manual conversions. Bare
+`python main.py` always opens the menu — no TTY auto-detection (it
+misfires on Windows terminals).
 
 ## Pipeline Phases (`main.py`)
 1. **Scrape:** `TradingViewScraper` fetches `.pine` files if `input/` <
@@ -81,6 +82,7 @@ conversion failures; gate failures do NOT increment it.
 ## Key Commands
 - Plug-and-play interactive run: `python main.py` (Manual / Scrape menu)
 - Scripted manual run (bypasses menu): `python main.py --manual input/manual/Foo.pine`
+- Unattended scrape (bypasses menu, e.g. CI): `python main.py --scrape`
 - Integration smoke tests: `pytest tests/integrations/ -v`
 - Convert specific file (skips Phase 1-3): `/convert input/MyStrategy.pine`
 - Re-run the gate on an existing strategy: `python scripts/rerun_statistical_gate.py <safe_name>`
