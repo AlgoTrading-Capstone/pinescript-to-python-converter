@@ -93,19 +93,37 @@ def render_gate_summary(
                   color="#34495e", linewidth=0.9, alpha=0.9)
     long_idx  = signals[signals == "LONG"].index
     short_idx = signals[signals == "SHORT"].index
+    drew_markers = False
     if 0 < len(long_idx) <= _MAX_SIGNAL_MARKERS:
         ax_price.scatter(long_idx, closes.reindex(long_idx).values,
                          color="#27ae60", s=8, marker="^",
                          alpha=0.55, label=f"LONG ({len(long_idx)})", linewidths=0)
+        drew_markers = True
     if 0 < len(short_idx) <= _MAX_SIGNAL_MARKERS:
         ax_price.scatter(short_idx, closes.reindex(short_idx).values,
                          color="#c0392b", s=8, marker="v",
                          alpha=0.55, label=f"SHORT ({len(short_idx)})", linewidths=0)
+        drew_markers = True
     ax_price.set_title("Price & signals", fontsize=11, fontweight="bold")
     ax_price.set_ylabel("Close", fontsize=9)
     ax_price.grid(True, alpha=0.25)
-    if len(long_idx) + len(short_idx) > 0:
+    if drew_markers:
         ax_price.legend(loc="upper left", fontsize=8, framealpha=0.85)
+    else:
+        # Either no signals at all, or too many to plot without solid-coloring
+        # the panel. Surface the count so the panel is still informative.
+        n_total = len(long_idx) + len(short_idx)
+        note = (
+            f"{n_total} active bars (markers suppressed)"
+            if n_total > _MAX_SIGNAL_MARKERS
+            else "no active signals"
+        )
+        ax_price.text(
+            0.99, 0.97, note, transform=ax_price.transAxes,
+            ha="right", va="top", fontsize=8, color="#888888",
+            bbox={"boxstyle": "round,pad=0.3", "facecolor": "white",
+                  "edgecolor": "#cccccc", "alpha": 0.85},
+        )
     if pd.api.types.is_datetime64_any_dtype(closes.index):
         ax_price.xaxis.set_major_locator(mdates.AutoDateLocator())
         ax_price.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
@@ -226,7 +244,11 @@ def render_gate_summary(
                           fontweight=weight)
         y -= line_h
 
-    fig.tight_layout(rect=(0, 0, 1, 0.965))
+    # Explicit margins instead of tight_layout — the metrics panel uses
+    # axis("off") + manual text() positioning, which tight_layout can't
+    # measure (would emit "Axes that are not compatible with tight_layout").
+    fig.subplots_adjust(top=0.93, bottom=0.07, left=0.05, right=0.97,
+                        hspace=0.32, wspace=0.20)
     fig.savefig(str(output_path), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return output_path
