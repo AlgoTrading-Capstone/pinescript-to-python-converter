@@ -14,10 +14,10 @@ from src.evaluation.variance import (
 )
 from src.evaluation.winrate import (
     compute_winrate,
-    create_winrate_barchart,
     passes_winrate,
 )
-from src.evaluation.heatmap import render_heatmap
+from src.evaluation.plots.heatmap import render_heatmap
+from src.evaluation.plots.winrate_curve import create_winrate_barchart
 
 __all__ = [
     "ACTIVE_SIGNALS",

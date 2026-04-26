@@ -44,7 +44,7 @@ from typing import Any, Optional
 import pandas as pd
 
 from src.base_strategy import BaseStrategy
-from src.evaluation.heatmap import render_heatmap
+from src.evaluation.plots.heatmap import render_heatmap
 from src.evaluation.metrics import (
     compute_bar_returns,
     compute_equity_curve,
@@ -61,10 +61,11 @@ from src.evaluation.runner import (
     generate_signals_for_strategy,
 )
 from src.evaluation.variance import signal_activity_pct
+from src.evaluation.plots.summary import render_gate_summary
+from src.evaluation.plots.winrate_curve import render_winrate_curve
 from src.evaluation.winrate import (
     compute_trades,
     compute_winrate,
-    render_winrate_curve,
 )
 from src.pipeline import (
     EVAL_END,
@@ -223,6 +224,7 @@ def _write_artifacts(
     ohlcv_df: Optional[pd.DataFrame],
     strategy_name: str,
     trades: Optional[pd.DataFrame] = None,
+    equity: Optional[pd.Series] = None,
 ) -> None:
     eval_dir.mkdir(parents=True, exist_ok=True)
 
@@ -254,6 +256,27 @@ def _write_artifacts(
         if rendered is not None and curve_path.exists():
             result.artifacts["winrate_curve"] = str(
                 curve_path.relative_to(eval_dir.parent)
+            )
+
+    if signals is not None and ohlcv_df is not None:
+        summary_path = eval_dir / "gate_summary.png"
+        rendered_summary = render_gate_summary(
+            strategy_name=strategy_name,
+            closes=ohlcv_df["close"],
+            signals=signals,
+            trades=trades if trades is not None else pd.DataFrame(),
+            equity=equity if equity is not None else pd.Series(dtype=float),
+            metrics=result.metrics,
+            variance=result.variance,
+            eval_window=result.eval_window,
+            lane=result.lane,
+            passed=result.passed,
+            reason=result.reason,
+            output_path=summary_path,
+        )
+        if rendered_summary is not None and summary_path.exists():
+            result.artifacts["gate_summary"] = str(
+                summary_path.relative_to(eval_dir.parent)
             )
 
     stats_path = eval_dir / "stats_report.json"
@@ -389,6 +412,6 @@ def run_statistical_gate(
         )
 
     _write_artifacts(
-        eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,
+        eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df, equity,
     )
     return base_result

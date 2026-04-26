@@ -16,6 +16,7 @@ CATEGORY_COUNTS_PATH    = DATA_DIR / "category_counts.json"
 SCRAPE_REJECTIONS_PATH  = DATA_DIR / "scrape_rejections.json"
 SOURCE_QUALITY_PATH     = DATA_DIR / "source_quality.json"
 INPUT_DIR               = Path("input")
+MANUAL_INPUT_DIR        = INPUT_DIR / "manual"  # interactive CLI drop-zone; scrape glob is non-recursive so files here are skipped by the scraper
 ARCHIVE_DIR             = Path("archive")
 OUTPUT_DIR              = Path("output")
 LOGS_ROOT               = Path("logs")

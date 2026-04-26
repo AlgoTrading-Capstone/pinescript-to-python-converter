@@ -26,11 +26,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from src.evaluation.heatmap import render_heatmap
 from src.evaluation.loader import StrategyLoadError, load_strategy_by_safe_name
 from src.evaluation.ohlcv import fetch_range
+from src.evaluation.plots.heatmap import render_heatmap
+from src.evaluation.plots.winrate_curve import create_winrate_barchart
 from src.evaluation.runner import StrategyContractError, generate_signals_for_strategy
-from src.evaluation.winrate import compute_winrate, create_winrate_barchart
+from src.evaluation.winrate import compute_winrate
 from src.pipeline import EVAL_END, EVAL_EXCHANGE, EVAL_START, EVAL_SYMBOL, EVAL_TIMEFRAME, OUTPUT_DIR
 
 

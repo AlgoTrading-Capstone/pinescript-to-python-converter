@@ -25,8 +25,8 @@ from src.pipeline.triage import (
     triage_strategy_metadata,
     update_source_quality,
 )
-from src.pipeline.ui import console, print_error, print_info, print_section, print_success, print_warning
-from src.utils.tv_scraper import SOURCE_URLS
+from src.cli.ui import console, print_error, print_info, print_section, print_success, print_warning
+from src.scrapers.tradingview import SOURCE_URLS
 
 logger = logging.getLogger("runner")
 
@@ -230,7 +230,7 @@ def run_tv_scraper(max_results: int = 6, *, exit_on_empty: bool = True) -> int:
         _root_log.addHandler(logging.NullHandler())
 
     try:
-        from src.utils.tv_scraper import TradingViewScraper
+        from src.scrapers.tradingview import TradingViewScraper
     except ImportError as exc:
         print_error(f"Cannot import TradingViewScraper: {exc}")
         print_info("Install missing deps: pip install selenium webdriver-manager")

@@ -10,7 +10,7 @@ from datetime import datetime, UTC
 from pathlib import Path
 
 from src.pipeline import ARCHIVE_DIR, ARCHIVE_SCORE_THRESHOLD, MAX_CONVERSION_ATTEMPTS, MAX_SKIP_COUNT
-from src.pipeline.ui import print_info
+from src.cli.ui import print_info
 
 logger = logging.getLogger("runner")
 

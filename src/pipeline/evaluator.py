@@ -16,7 +16,7 @@ from typing import Optional
 from src.pipeline import MAX_DRAWDOWN_PCT, SUBPROCESS_ENV, TERMINAL_STATUSES, _verdict
 from src.pipeline.claude_cli import has_claude_cli
 from src.pipeline.registry import _now_iso, save_registry
-from src.pipeline.ui import (
+from src.cli.ui import (
     build_table,
     console,
     print_info,

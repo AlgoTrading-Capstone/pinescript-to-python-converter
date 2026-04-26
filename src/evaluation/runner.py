@@ -147,6 +147,6 @@ def signals_to_dataframe(
 ) -> pd.DataFrame:
     """
     Combine per-strategy signal Series into a single DataFrame suitable for
-    handing to `src.evaluation.heatmap.render_heatmap`.
+    handing to `src.evaluation.plots.heatmap.render_heatmap`.
     """
     return pd.DataFrame(signals_by_name, index=list(index))

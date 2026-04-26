@@ -43,7 +43,7 @@ for _stream_name in ("stdout", "stderr"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
 from src.pipeline import MIN_TRADE_COUNT, OUTPUT_DIR
-from src.evaluation.winrate import create_winrate_barchart
+from src.evaluation.plots.winrate_curve import create_winrate_barchart
 
 
 LEADERBOARD_DIR = OUTPUT_DIR / "leaderboard"

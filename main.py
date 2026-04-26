@@ -17,6 +17,7 @@ from pathlib import Path
 from src.pipeline import (
     INPUT_DIR,
     LOGS_ROOT,
+    MANUAL_INPUT_DIR,
     MAX_SEARCH_LOOPS,
     OUTPUT_DIR,
     TARGET_STRATEGY_COUNT,
@@ -40,7 +41,9 @@ from src.pipeline.registry import _now_iso, load_registry, save_registry, scan_a
 from src.pipeline.scraper import run_tv_scraper
 from src.pipeline.selector import auto_select_strategy
 from src.pipeline.statistical_gate import run_statistical_gate
-from src.pipeline.ui import (
+from src.cli.interactive_menu import confirm_run, pick_manual_file, run_interactive_menu
+from src.cli.phase_reporter import print_phase_summary
+from src.cli.ui import (
     print_artifact_summary,
     print_banner,
     print_error,
@@ -173,6 +176,12 @@ def main(argv: list[str] | None = None) -> None:
             ("Selected strategy", run_state.get("selected_strategy")),
             ("Output snapshot", run_state.get("output_snapshot")),
             ("Eval artifacts", run_state.get("eval_artifacts")),
+            ("Strategy file", run_state.get("strategy_file")),
+            ("Test file", run_state.get("test_file")),
+            ("Stats report", run_state.get("stats_report")),
+            ("Signal heatmap", run_state.get("signal_heatmap")),
+            ("Win-rate curve", run_state.get("winrate_curve")),
+            ("Gate summary", run_state.get("gate_summary")),
             ("Conversion logs", run_state.get("conversion_logs")),
             ("Integration log", run_state.get("integration_log")),
             ("Archived Pine", run_state.get("archived_pine")),
@@ -215,6 +224,12 @@ def main(argv: list[str] | None = None) -> None:
                 logger.error("Token indicated success but artifacts are missing.")
                 success = False
 
+        print_phase_summary(
+            "Phase 4 · Convert",
+            {"safe_name": safe_name, "orchestrator": "PASS" if success else "FAIL"},
+            status="ok" if success else "fail",
+        )
+
         if success:
             print_section("Statistical Gate")
             try:
@@ -230,6 +245,20 @@ def main(argv: list[str] | None = None) -> None:
                 print_error(f"Statistical gate crashed: {e}")
                 run_state["failure_detail"] = f"Statistical gate crashed: {e}"
                 success = False
+
+            if gate_result is not None:
+                _gv = gate_result.variance or {}
+                _gw = gate_result.winrate or {}
+                print_phase_summary(
+                    "Phase 4b · Gate",
+                    {
+                        "variance":  f"{_gv.get('signal_activity_pct', 0) * 100:.1f}%",
+                        "win_rate":  f"{_gw.get('win_rate', 0) * 100:.1f}%",
+                        "trades":    _gw.get("total_trades", 0),
+                        "lane":      gate_result.lane or "—",
+                    },
+                    status="ok" if gate_result.passed else "fail",
+                )
 
             if gate_result is not None and not gate_result.passed:
                 print_warning(f"Strategy rejected by statistical gate: {gate_result.reason}")
@@ -260,6 +289,15 @@ def main(argv: list[str] | None = None) -> None:
                     f"winrate={gate_result.winrate.get('win_rate', 0):.1%} "
                     f"over {gate_result.winrate.get('total_trades', 0)} trades"
                 )
+                # Surface explicit artifact paths in the final Run Summary table.
+                _arts = gate_result.artifacts or {}
+                run_state["strategy_file"]  = Path("src/strategies") / f"{safe_name}_strategy.py"
+                run_state["test_file"]      = Path("tests/strategies") / f"test_{safe_name}_strategy.py"
+                run_state["stats_report"]   = out_dir / _arts.get("stats_report", "eval/stats_report.json")
+                run_state["signal_heatmap"] = out_dir / _arts.get("heatmap", "eval/signal_heatmap.png")
+                run_state["winrate_curve"]  = out_dir / _arts.get("winrate_curve", "eval/winrate_curve.png")
+                if "gate_summary" in _arts:
+                    run_state["gate_summary"] = out_dir / _arts["gate_summary"]
 
         if success:
             print_section("Integration")
@@ -269,6 +307,12 @@ def main(argv: list[str] | None = None) -> None:
                 output_snapshot=out_dir,
                 safe_name=safe_name,
             )
+            print_phase_summary(
+                "Phase 4c · Integration",
+                {"safe_name": safe_name, "status": "PASS" if integration_ok else "FAIL"},
+                status="ok" if integration_ok else "fail",
+            )
+
             if not integration_ok:
                 print_error("Integration failed after a passing gate.")
                 run_state["integration_log"] = out_dir / "agent_integration.md"
@@ -308,21 +352,72 @@ def main(argv: list[str] | None = None) -> None:
         return False
 
     try:
+        # ------------------------------------------------------------------
+        # Decide mode: explicit --manual, or interactive menu when no flag
+        # was given. Non-TTY invocations fall back to the existing scrape
+        # flow so CI / cron jobs are unaffected.
+        # ------------------------------------------------------------------
+        mode: str
+        manual_source: Path | None
+        manual_input_dir: Path
         if args.manual is not None:
+            mode = "manual"
+            manual_source = args.manual
+            manual_input_dir = INPUT_DIR
+        elif not sys.stdin.isatty():
+            mode = "scrape"
+            manual_source = None
+            manual_input_dir = INPUT_DIR
+        else:
+            choice = run_interactive_menu()
+            if choice is None:
+                run_state["failure_detail"] = "User quit at the menu."
+                _finish("aborted_by_user", 0)
+            if choice == "manual":
+                picked = pick_manual_file(MANUAL_INPUT_DIR)
+                if picked is None:
+                    run_state["failure_detail"] = "User quit at file picker."
+                    _finish("aborted_by_user", 0)
+                mode = "manual"
+                manual_source = picked
+                manual_input_dir = MANUAL_INPUT_DIR
+            else:
+                mode = "scrape"
+                manual_source = None
+                manual_input_dir = INPUT_DIR
+
+        if mode == "manual":
             print_section("Manual Direct Conversion")
             try:
                 manual = prepare_manual_strategy_file(
-                    args.manual,
+                    manual_source,
                     name=args.name,
                     url=args.url,
                     timeframe=args.timeframe,
                     lookback_bars=args.lookback_bars,
-                    input_dir=INPUT_DIR,
+                    input_dir=manual_input_dir,
                 )
             except ManualIngestError as exc:
                 print_error(f"Manual strategy rejected: {exc}")
                 run_state["failure_detail"] = str(exc)
                 _finish("manual_ingest_failed", 1)
+
+            print_phase_summary(
+                "Phase 1 · Manual ingest",
+                {
+                    "name": manual.metadata.get("name"),
+                    "safe": manual.metadata.get("safe_name"),
+                    "timeframe": manual.metadata.get("timeframe"),
+                    "lookback": manual.metadata.get("lookback_bars"),
+                },
+                status="ok",
+            )
+
+            # Interactive runs get a confirmation prompt; --manual flag runs proceed silently.
+            if args.manual is None and not confirm_run(manual.metadata, manual.source_triage_reason):
+                print_info("Conversion cancelled.")
+                run_state["failure_detail"] = "User declined to start conversion."
+                _finish("aborted_by_user", 0)
 
             registry = load_registry()
             chosen_key = manual.pine_path.name
@@ -381,6 +476,12 @@ def main(argv: list[str] | None = None) -> None:
             run_state["failure_detail"] = "Scraper did not promote enough candidates."
             _finish("scrape_exhausted", 1)
 
+        print_phase_summary(
+            "Phase 1 · Scrape",
+            {"pine_files": len(existing), "target": TARGET_STRATEGY_COUNT, "attempts": scrape_attempt},
+            status="ok",
+        )
+
         # Step 1 — Scan & Register
         print_section("Registry")
         print_info("Scanning input/ for .pine files...")
@@ -412,6 +513,14 @@ def main(argv: list[str] | None = None) -> None:
         registry = purge_rejected_evaluations(registry)
         save_registry(registry)
 
+        evaluated_count = sum(1 for r in registry.values() if r.get("status") == "evaluated")
+        rejected_count  = sum(1 for r in registry.values() if r.get("status") in TERMINAL_STATUSES)
+        print_phase_summary(
+            "Phase 2 · Evaluate",
+            {"evaluated": evaluated_count, "rejected_terminal": rejected_count},
+            status="ok",
+        )
+
         # Step 3 — Auto-select the highest-scoring strategy.
         # If no evaluated strategies exist, fetch a fresh batch and retry.
         chosen_key, chosen_rec = None, None
@@ -432,6 +541,14 @@ def main(argv: list[str] | None = None) -> None:
         registry[chosen_key]["status"] = "selected"
         save_registry(registry)
         run_state["selected_strategy"] = chosen_key
+
+        _btc = chosen_rec.get("btc_score") or 0
+        _proj = chosen_rec.get("project_score") or 0
+        print_phase_summary(
+            "Phase 3 · Select",
+            {"chosen": chosen_key, "btc": _btc, "project": _proj, "total": _btc + _proj},
+            status="ok",
+        )
 
         if _run_conversion_pipeline(chosen_key, chosen_rec):
             print_section("Archive")

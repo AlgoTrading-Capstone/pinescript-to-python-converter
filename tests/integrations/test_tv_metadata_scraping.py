@@ -31,7 +31,7 @@ from selenium.common.exceptions import WebDriverException
 # ---------------------------------------------------------------------------
 # Import the scraper and the standalone parsing utility
 # ---------------------------------------------------------------------------
-from src.utils.tv_scraper import TradingViewScraper, _parse_metric_to_float
+from src.scrapers.tradingview import TradingViewScraper, _parse_metric_to_float
 
 # ---------------------------------------------------------------------------
 # Test URL — a well-known public strategy with a populated Strategy Report.

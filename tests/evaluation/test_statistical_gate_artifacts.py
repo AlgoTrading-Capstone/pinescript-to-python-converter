@@ -76,6 +76,10 @@ def _stub_artifact_renderers(monkeypatch):
         "src.pipeline.statistical_gate.render_winrate_curve",
         lambda trades, output_path, title: _write_png(output_path=output_path),
     )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.render_gate_summary",
+        lambda **kwargs: _write_png(output_path=kwargs["output_path"]),
+    )
 
 
 def _stub_gate_stats(
@@ -173,6 +177,10 @@ def test_gate_marks_strict_lane_for_positive_expectancy_high_winrate(tmp_path, m
     payload = json.loads((tmp_path / result.artifacts["stats_report"]).read_text(encoding="utf-8"))
     assert payload["lane"] == "strict"
     assert payload["metrics"]["profit_factor"] == 1.5
+    # Unified gate-summary plot must be written alongside the existing two PNGs.
+    assert result.artifacts["gate_summary"].replace("\\", "/") == "eval/gate_summary.png"
+    assert payload["artifacts"]["gate_summary"].replace("\\", "/") == "eval/gate_summary.png"
+    assert (tmp_path / result.artifacts["gate_summary"]).exists()
 
 
 def test_gate_marks_research_lane_for_positive_expectancy_lower_winrate(tmp_path, monkeypatch):

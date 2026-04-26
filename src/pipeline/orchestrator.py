@@ -14,7 +14,7 @@ import threading
 from pathlib import Path
 
 from src.pipeline import LOGS_ROOT, SUBPROCESS_ENV
-from src.pipeline.ui import print_error, print_info, print_warning
+from src.cli.ui import print_error, print_info, print_warning
 
 logger = logging.getLogger("runner")
 

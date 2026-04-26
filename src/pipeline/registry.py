@@ -11,7 +11,7 @@ from datetime import datetime, UTC
 from pathlib import Path
 
 from src.pipeline import REGISTRY_PATH, INPUT_DIR, TERMINAL_STATUSES, _EXCLUDED_PINE_FILES
-from src.pipeline.ui import print_info
+from src.cli.ui import print_info
 
 logger = logging.getLogger("runner")
 _STALE_PRECHECK_MARKERS = (

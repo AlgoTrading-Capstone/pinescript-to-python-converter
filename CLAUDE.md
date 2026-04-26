@@ -45,8 +45,14 @@ indicators per tick).
 ## Commands
 
 ```bash
-# Run the full pipeline (requires Claude CLI in PATH)
+# Plug-and-play: drops into an interactive Manual / Scrape menu.
 python main.py
+
+# Manual mode (interactive): pick #1, drop a .pine into input/manual/, press
+# Enter, the system identifies the strategy and asks before running.
+
+# Manual mode (scripted, bypasses the menu):
+python main.py --manual input/manual/MyStrategy.pine --timeframe 15m
 
 # Run tests (Linux/macOS)
 pytest tests/strategies/ -v
@@ -61,16 +67,26 @@ pytest tests/strategies/test_<safe_name>_strategy.py -v
 pytest tests/integrations/ -v
 ```
 
+**Non-interactive invocations** (CI, cron, redirected stdin) bypass the menu
+and fall through to the existing scrape flow — no flag changes required.
+
 **Dependencies:** `TA-Lib` requires the C library installed separately.
 `ccxt` powers candle boundary alignment and the statistical gate's OHLCV
 fetch. `matplotlib` and `pyarrow` are required by the gate
 (heatmap rendering and parquet OHLCV cache).
 
 ## Pipeline Flow (High Level)
-`main.py` is the single entry point orchestrating these phases:
+`main.py` is the single entry point. On a bare invocation the **interactive
+CLI** (`src/cli/interactive_menu.py`) prompts the user to pick **Manual**
+(drop a `.pine` into `input/manual/`, the system identifies it and asks to
+run) or **Scrape** (the auto-fetch flow below). Both modes print
+value-laden phase summaries (`src/cli/phase_reporter.py`) and end with an
+"Artifacts" block listing every file written. The legacy phases below are
+unchanged:
+
 1. **Scrape:** Auto-downloads public strategies via Selenium if `input/`
    has fewer than `TARGET_STRATEGY_COUNT` `.pine` files. The scraper draws
-   from a named `SOURCE_URLS` catalogue in `src/utils/tv_scraper.py`
+   from a named `SOURCE_URLS` catalogue in `src/scrapers/tradingview.py`
    (crypto_recent, cryptotrading, popular, editors_pick — crypto sources
    first so cross-source dedup biases the pool toward BTC-suitable picks).
    `_allocate_source_targets` splits `max_results` evenly across the
@@ -106,9 +122,12 @@ fetch. `matplotlib` and `pyarrow` are required by the gate
     A failure here is **terminal** (`statistically_rejected`) and does NOT
     consume a conversion attempt — the code was correct, the strategy is
     just dead on data. Artifacts (`signal_heatmap.png`, `winrate_curve.png`,
-    `stats_report.json`) are written to `output/<safe_name>/<ts>/eval/` on
-    both pass and fail paths, so the PR body (on pass) or the post-mortem
-    (on fail) always has evidence on disk.
+    `gate_summary.png`, `stats_report.json`) are written to
+    `output/<safe_name>/<ts>/eval/` on both pass and fail paths, so the PR
+    body (on pass) or the post-mortem (on fail) always has evidence on disk.
+    `gate_summary.png` is the unified one-glance verdict: price+signals,
+    equity+drawdown, rolling win rate, and a metrics text panel in a single
+    figure (rendered by `src/evaluation/plots/summary.py`).
 4c. **Integration** (`run_integration`, separate subprocess): only invoked
     after a passing gate. Creates the branch and opens the GitHub PR via
     MCP — never through a local `git` call against sibling repos. The
@@ -147,6 +166,9 @@ conversion failures only; gate failures do NOT increment it.
 - `MAX_SKIP_COUNT = 2` — archive after being skipped this many times
 - `MAX_CONVERSION_ATTEMPTS = 3` — reject after this many failed conversions
 - `TARGET_STRATEGY_COUNT = 6` — minimum `.pine` files to maintain in `input/`
+- `MANUAL_INPUT_DIR = INPUT_DIR / "manual"` — drop-zone for the interactive
+  Manual mode. The scrape glob is non-recursive so files placed here are
+  invisible to the auto-scrape flow.
 - `MIN_SIGNAL_ACTIVITY_PCT = 0.05`, `MIN_WIN_RATE = 0.50`,
   `MIN_TRADE_COUNT = 30` — statistical-gate thresholds
 - `EVAL_EXCHANGE/SYMBOL/TIMEFRAME/START/END` — gate evaluation window
@@ -162,8 +184,12 @@ conversion failures only; gate failures do NOT increment it.
 | Path | Purpose |
 |---|---|
 | `main.py` | Pipeline entry point and orchestrator trigger. |
-| `src/pipeline/` | Pipeline core modules (`registry.py`, `evaluator.py`, `orchestrator.py`, `statistical_gate.py`, ...). |
-| `src/evaluation/` | Statistical-gate primitives — `runner.py` (contract enforcement), `loader.py` (dynamic strategy import), `ohlcv.py` (paginated ccxt fetch + parquet cache), `variance.py`, `winrate.py`, `heatmap.py`. |
+| `src/cli/` | Presentation only — `ui.py` (Rich theme + helpers), `interactive_menu.py` (Manual/Scrape menu, file picker, run confirmation), `phase_reporter.py` (`print_phase_summary` value-laden phase lines). |
+| `src/pipeline/` | Pipeline core modules (`registry.py`, `evaluator.py`, `orchestrator.py`, `statistical_gate.py`, `manual_ingest.py`, `scraper.py`, ...). No UI / matplotlib in this package. |
+| `src/scrapers/tradingview.py` | TradingView Selenium scraper + Pine source extraction. Heavy single-purpose module — moved out of `src/utils/` (where it does not belong). |
+| `src/evaluation/` | Statistical-gate primitives — `runner.py` (contract enforcement), `loader.py` (dynamic strategy import), `ohlcv.py` (paginated ccxt fetch + parquet cache), `variance.py`, `winrate.py` (compute-only), `metrics.py`. |
+| `src/evaluation/plots/` | All gate rendering — `heatmap.py`, `winrate_curve.py` (extracted from `winrate.py`), `summary.py` (the unified `gate_summary.png`). |
+| `input/manual/` | Drop-zone for the interactive Manual mode. `python main.py` → pick Manual → drop a `.pine` here → press Enter to rescan and pick. |
 | `data/strategies_registry.json` | State tracker (`new → evaluated → selected → completed / failed → archived / rejected / statistically_rejected`). |
 | `data/ohlcv_cache/` | Parquet cache of historical candles, downloaded once per (exchange, symbol, timeframe, range). |
 | `src/base_strategy.py` | **Immutable** abstract base. Both `generate_all_signals` and `step` are required. |
@@ -171,8 +197,8 @@ conversion failures only; gate failures do NOT increment it.
 | `tests/conftest.py` | Shared `sample_ohlcv_data` fixture (1,100 candles with warmup / sideways / bull / bear phases). |
 | `archive/` | Archived `.pine` sources. |
 | `archive/old_strategies/` | Pre-statistical-gate strategies and tests, kept for reference (do NOT import from here). |
-| `output/<safe_name>/<timestamp>/` | Per-run snapshot: generated code, tests, agent logs (`agent_transpiler.md`, `agent_validator.md`, `agent_test_generator.md`, `agent_integration.md`), `eval/stats_report.json`, `eval/signal_heatmap.png`, `eval/winrate_curve.png`. |
-| `scripts/rerun_statistical_gate.py` | Standalone gate re-run: regenerates all three eval artifacts and updates the registry (`completed` on pass, `statistically_rejected` on fail, `conversion_attempts` reset to 0). |
+| `output/<safe_name>/<timestamp>/` | Per-run snapshot: generated code, tests, agent logs (`agent_transpiler.md`, `agent_validator.md`, `agent_test_generator.md`, `agent_integration.md`), `eval/stats_report.json`, `eval/signal_heatmap.png`, `eval/winrate_curve.png`, `eval/gate_summary.png`. |
+| `scripts/rerun_statistical_gate.py` | Standalone gate re-run: regenerates all four eval artifacts and updates the registry (`completed` on pass, `statistically_rejected` on fail, `conversion_attempts` reset to 0). |
 | `scripts/rank_strategies.py` | Cross-strategy leaderboard: scans `output/*/*/eval/stats_report.json`, filters to gate-passed strategies, ranks by `win_rate * avg_pnl_bps * sqrt(trades / min_trades)`, writes `leaderboard.md` + `leaderboard.json` + `winrate_comparison.png` locally (never pushed to rl-training). |
 
 ## `/convert` Slash Command
@@ -181,6 +207,10 @@ To bypass scraping and evaluation for a specific file, drop a `.pine` file in
 ```bash
 /convert input/MyStrategy.pine
 ```
+
+The interactive Manual mode (`python main.py` → pick Manual) is the
+preferred plug-and-play path — it performs the same bypass but adds
+identification, confirmation, and live phase summaries on top.
 
 ## Current State (post-reset)
 `src/strategies/` has been wiped — every previously generated strategy was

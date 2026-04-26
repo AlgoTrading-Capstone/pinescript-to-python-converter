@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 
 import main
+from src.pipeline import MANUAL_INPUT_DIR
 from src.pipeline.manual_ingest import (
     ManualIngestError,
+    prepare_manual_strategy_file,
     prepare_manual_strategy_source,
 )
 
@@ -52,6 +54,28 @@ def test_manual_ingest_writes_valid_pine_and_metadata(tmp_path):
 def test_manual_ingest_rejects_non_pine_text(tmp_path):
     with pytest.raises(ManualIngestError, match="invalid_pine_source"):
         prepare_manual_strategy_source("Repair documentation drift.", input_dir=tmp_path)
+
+
+def test_manual_ingest_writes_to_manual_input_dir(tmp_path):
+    """`prepare_manual_strategy_file(input_dir=MANUAL_INPUT_DIR)` lands the
+    .pine and its sidecar inside the dedicated `input/manual/` drop-zone, not
+    at the top-level `input/`."""
+    manual_dir = tmp_path / "manual"
+    src = tmp_path / "scratch.pine"
+    src.write_text(_valid_pine("Drop Zone"), encoding="utf-8")
+
+    manual = prepare_manual_strategy_file(src, input_dir=manual_dir)
+
+    assert manual.pine_path.parent == manual_dir
+    assert manual.pine_path.name == "Drop_Zone.pine"
+    assert manual.pine_path.exists()
+    assert manual.pine_path.with_suffix(".meta.json").exists()
+
+
+def test_manual_input_dir_is_subdir_of_input():
+    """Sanity: MANUAL_INPUT_DIR is `input/manual` so the scrape glob (which
+    is non-recursive) skips files placed there."""
+    assert MANUAL_INPUT_DIR.parts[-2:] == ("input", "manual")
 
 
 def test_manual_main_bypasses_scraper_evaluator_and_selector(monkeypatch, tmp_path):

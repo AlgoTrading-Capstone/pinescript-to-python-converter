@@ -313,7 +313,7 @@ _PINE_FACADE_URL = (
 )
 
 # Absolute path to the project's input/ directory, independent of working directory.
-# tv_scraper.py lives at <project>/src/utils/tv_scraper.py → go up 3 levels.
+# tradingview.py lives at <project>/src/scrapers/tradingview.py → go up 3 levels.
 _PROJECT_INPUT_DIR = str(Path(__file__).resolve().parent.parent.parent / "input")
 
 
@@ -619,7 +619,7 @@ class TradingViewScraper:
             "  • Script is private / invite-only (requires TradingView login).\n"
             "  • TradingView changed their copy button — open the page in\n"
             "    Chrome DevTools, find the copy button, and update\n"
-            "    _COPY_BTN_XPATHS at the top of tv_scraper.py.\n\n"
+            "    _COPY_BTN_XPATHS at the top of src/scrapers/tradingview.py.\n\n"
             "  • Manual fallback: paste PineScript into input/source_strategy.pine\n"
             "    and run main.py directly."
         )

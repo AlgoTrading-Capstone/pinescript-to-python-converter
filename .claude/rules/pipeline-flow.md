@@ -2,10 +2,25 @@
 
 This rule provides the high-level context of the TradingView to Python Transpilation Factory.
 
+## Entry Point — Interactive CLI
+`python main.py` (no args, TTY) drops the user into the menu defined in
+`src/cli/interactive_menu.py`:
+
+- **Manual** — user drops a `.pine` file into `input/manual/`, the system
+  scans it, identifies the strategy via `prepare_manual_strategy_file`,
+  prints an identification summary, and asks "Start conversion? [y/N]".
+  On 'y', the conversion + gate + integration phases run with live phase
+  summaries (`src/cli/phase_reporter.print_phase_summary`).
+- **Scrape** — runs the existing auto-fetch + evaluate + select flow below.
+
+Non-interactive invocations (no TTY, redirected stdin) bypass the menu and
+fall through to the Scrape flow so CI / cron jobs are unaffected.
+`--manual <path>` still works for fully-scripted manual conversions.
+
 ## Pipeline Phases (`main.py`)
 1. **Scrape:** `TradingViewScraper` fetches `.pine` files if `input/` <
    `TARGET_STRATEGY_COUNT` (6). Listings are pulled from a named
-   `SOURCE_URLS` catalogue (`src/utils/tv_scraper.py`): `crypto_recent`,
+   `SOURCE_URLS` catalogue (`src/scrapers/tradingview.py`): `crypto_recent`,
    `cryptotrading`, `popular`, `editors_pick`. Crypto sources come first so
    cross-source dedup biases the pool toward BTC-suitable strategies.
    `_allocate_source_targets` distributes `max_results` evenly across the
@@ -34,9 +49,11 @@ This rule provides the high-level context of the TradingView to Python Transpila
     converted strategy and runs `generate_all_signals` on multi-year
     BTC/USDT 15m candles. Enforces variance (≥5% active bars) AND win rate
     (≥50% over ≥30 trades). On PASS and FAIL, writes `signal_heatmap.png`,
-    `winrate_curve.png`, and `stats_report.json` into
-    `output/<safe_name>/<ts>/eval/`. A FAIL is **terminal**
-    (`statistically_rejected`) and does NOT consume a conversion attempt.
+    `winrate_curve.png`, `gate_summary.png` (the unified one-glance
+    verdict from `src/evaluation/plots/summary.py`), and
+    `stats_report.json` into `output/<safe_name>/<ts>/eval/`. A FAIL is
+    **terminal** (`statistically_rejected`) and does NOT consume a
+    conversion attempt.
 4c. **Integration** (`run_integration`, separate subprocess): only
     launched after the gate passes. Creates the git branch and opens the
     GitHub PR via MCP. Agent emits `INTEGRATION_PASS` or
@@ -62,7 +79,8 @@ never re-evaluated or recycled. `conversion_attempts` counts only
 conversion failures; gate failures do NOT increment it.
 
 ## Key Commands
-- Run pipeline: `python main.py`
+- Plug-and-play interactive run: `python main.py` (Manual / Scrape menu)
+- Scripted manual run (bypasses menu): `python main.py --manual input/manual/Foo.pine`
 - Integration smoke tests: `pytest tests/integrations/ -v`
 - Convert specific file (skips Phase 1-3): `/convert input/MyStrategy.pine`
 - Re-run the gate on an existing strategy: `python scripts/rerun_statistical_gate.py <safe_name>`

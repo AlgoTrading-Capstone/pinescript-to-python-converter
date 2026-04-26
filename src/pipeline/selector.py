@@ -13,7 +13,7 @@ from src.pipeline import (
     _verdict,
 )
 from src.pipeline.evaluator import INFRA_FAILURE_STATUSES
-from src.pipeline.ui import build_table, console, print_info, print_section, print_warning, truncate, verdict_text
+from src.cli.ui import build_table, console, print_info, print_section, print_warning, truncate, verdict_text
 
 logger = logging.getLogger("runner")
 
