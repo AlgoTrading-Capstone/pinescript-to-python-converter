@@ -78,14 +78,35 @@ def _stub_artifact_renderers(monkeypatch):
     )
 
 
-def _stub_gate_stats(monkeypatch, *, win_rate: float, total_trades: int, avg_pnl: float):
+def _stub_gate_stats(
+    monkeypatch,
+    *,
+    win_rate: float,
+    total_trades: int,
+    avg_pnl: float,
+    profit_factor: float = 1.5,
+    max_drawdown: float = 0.20,
+    sharpe: float = 1.0,
+    sortino: float = 1.2,
+    expectancy: float | None = None,
+):
+    """Stub every per-strategy metric the gate computes.
+
+    Defaults form a strict-lane-passing baseline. Override one field to drive
+    the gate down a specific reject branch. ``expectancy`` defaults to
+    ``avg_pnl`` so existing per-trade assertions stay coherent unless
+    explicitly decoupled.
+    """
+    if expectancy is None:
+        expectancy = avg_pnl
+
     monkeypatch.setattr(
         "src.pipeline.statistical_gate.compute_winrate",
         lambda closes, signals: {
             "win_rate": win_rate,
             "total_trades": total_trades,
             "avg_pnl": avg_pnl,
-            "trades": [avg_pnl] * total_trades,
+            "trades": [avg_pnl] * max(1, total_trades),
         },
     )
     monkeypatch.setattr(
@@ -94,8 +115,37 @@ def _stub_gate_stats(monkeypatch, *, win_rate: float, total_trades: int, avg_pnl
             {
                 "exit_time": closes.index[: max(1, total_trades)],
                 "pnl": [avg_pnl] * max(1, total_trades),
+                "win": [avg_pnl > 0] * max(1, total_trades),
             }
         ),
+    )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.compute_bar_returns",
+        lambda closes, signals: pd.Series([0.0] * len(closes), index=closes.index),
+    )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.compute_equity_curve",
+        lambda bar_returns: pd.Series([1.0] * len(bar_returns), index=bar_returns.index),
+    )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.compute_max_drawdown",
+        lambda equity: max_drawdown,
+    )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.compute_sharpe",
+        lambda bar_returns: sharpe,
+    )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.compute_sortino",
+        lambda bar_returns: sortino,
+    )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.compute_profit_factor",
+        lambda trade_pnl: profit_factor,
+    )
+    monkeypatch.setattr(
+        "src.pipeline.statistical_gate.compute_expectancy",
+        lambda trade_pnl: expectancy,
     )
 
 
@@ -113,7 +163,8 @@ def test_gate_stats_report_lists_itself_as_artifact(tmp_path):
 
 def test_gate_marks_strict_lane_for_positive_expectancy_high_winrate(tmp_path, monkeypatch):
     _stub_artifact_renderers(monkeypatch)
-    _stub_gate_stats(monkeypatch, win_rate=0.55, total_trades=40, avg_pnl=0.01)
+    # All defaults clear every strict bar (PF=1.5, MDD=0.20, Sharpe=1.0, Sortino=1.2).
+    _stub_gate_stats(monkeypatch, win_rate=0.50, total_trades=250, avg_pnl=0.001)
 
     result = run_statistical_gate(ActiveStrategy(), tmp_path, ohlcv_df=_ohlcv())
 
@@ -121,11 +172,20 @@ def test_gate_marks_strict_lane_for_positive_expectancy_high_winrate(tmp_path, m
     assert result.lane == "strict"
     payload = json.loads((tmp_path / result.artifacts["stats_report"]).read_text(encoding="utf-8"))
     assert payload["lane"] == "strict"
+    assert payload["metrics"]["profit_factor"] == 1.5
 
 
 def test_gate_marks_research_lane_for_positive_expectancy_lower_winrate(tmp_path, monkeypatch):
     _stub_artifact_renderers(monkeypatch)
-    _stub_gate_stats(monkeypatch, win_rate=0.40, total_trades=40, avg_pnl=0.02)
+    # MDD = 0.28 sits between the strict bar (0.25) and the floor (0.30) →
+    # passes all floors but misses one strict bar → research.
+    _stub_gate_stats(
+        monkeypatch,
+        win_rate=0.50,
+        total_trades=250,
+        avg_pnl=0.001,
+        max_drawdown=0.28,
+    )
 
     result = run_statistical_gate(ActiveStrategy(), tmp_path, ohlcv_df=_ohlcv())
 
@@ -137,23 +197,23 @@ def test_gate_marks_research_lane_for_positive_expectancy_lower_winrate(tmp_path
 
 def test_gate_rejects_non_positive_expectancy_with_null_lane(tmp_path, monkeypatch):
     _stub_artifact_renderers(monkeypatch)
-    _stub_gate_stats(monkeypatch, win_rate=0.80, total_trades=40, avg_pnl=0.0)
+    _stub_gate_stats(monkeypatch, win_rate=0.50, total_trades=250, avg_pnl=0.0)
 
     result = run_statistical_gate(ActiveStrategy(), tmp_path, ohlcv_df=_ohlcv())
 
     assert result.passed is False
     assert result.lane is None
-    assert result.reason.startswith("non_positive_expectancy")
+    assert result.reason.startswith("expectancy_non_positive")
     payload = json.loads((tmp_path / result.artifacts["stats_report"]).read_text(encoding="utf-8"))
     assert payload["lane"] is None
 
 
 def test_gate_rejects_too_few_trades_with_null_lane(tmp_path, monkeypatch):
     _stub_artifact_renderers(monkeypatch)
-    _stub_gate_stats(monkeypatch, win_rate=0.80, total_trades=29, avg_pnl=0.01)
+    _stub_gate_stats(monkeypatch, win_rate=0.50, total_trades=149, avg_pnl=0.001)
 
     result = run_statistical_gate(ActiveStrategy(), tmp_path, ohlcv_df=_ohlcv())
 
     assert result.passed is False
     assert result.lane is None
-    assert result.reason == "too_few_trades: 29 < 30"
+    assert result.reason == "trade_count_below_floor: 149 < 150"

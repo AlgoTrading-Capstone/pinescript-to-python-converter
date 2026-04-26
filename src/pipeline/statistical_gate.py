@@ -9,9 +9,13 @@ The gate runs four checks in order — any failure short-circuits:
   1. Load OHLCV from cache (downloaded once via src/evaluation/ohlcv.py).
   2. Execute the strategy's vectorized generate_all_signals.
   3. Variance: LONG+SHORT signals must cover ≥MIN_SIGNAL_ACTIVITY_PCT of bars.
-  4. Expectancy lane: avg PnL must be positive, then win rate assigns
-     "strict" (>=MIN_WIN_RATE) or "research" (>=35%) over
-     >=MIN_TRADE_COUNT trades.
+  4. Strict-compliance lane assignment: a 7-dimension `GateMetrics` record
+     (Profit Factor, Win Rate, Max Drawdown, Trade Count, Sharpe, Sortino,
+     Expectancy) is built from per-trade PnL + bar-level returns and routed
+     through the pure `assign_lane()` decision function. Any single overfit
+     cap or hard floor failure rejects (`lane=None`); meeting all strict
+     bars yields `lane="strict"`; passing the floors but missing one or
+     more strict bars yields `lane="research"`.
 
 On PASS: write signal_heatmap.png + stats_report.json into <output_dir>/eval/,
 populate the `evaluation` block on the registry entry, and return a GateResult
@@ -25,6 +29,7 @@ and return a GateResult with passed=False.
 Public API
 ----------
 run_statistical_gate(strategy, output_dir, *, ohlcv_df=None) -> GateResult
+GateMetrics, assign_lane(metrics) -> (lane, reason)
 """
 
 from __future__ import annotations
@@ -40,6 +45,15 @@ import pandas as pd
 
 from src.base_strategy import BaseStrategy
 from src.evaluation.heatmap import render_heatmap
+from src.evaluation.metrics import (
+    compute_bar_returns,
+    compute_equity_curve,
+    compute_expectancy,
+    compute_max_drawdown,
+    compute_profit_factor,
+    compute_sharpe,
+    compute_sortino,
+)
 from src.evaluation.ohlcv import fetch_range
 from src.evaluation.runner import (
     StrategyContractError,
@@ -59,14 +73,97 @@ from src.pipeline import (
     EVAL_SYMBOL,
     EVAL_TIMEFRAME,
     MIN_SIGNAL_ACTIVITY_PCT,
-    MIN_TRADE_COUNT,
-    MIN_WIN_RATE,
 )
 from src.utils.timeframes import timeframe_to_minutes
 
 
 logger = logging.getLogger("runner.gate")
-RESEARCH_MIN_WIN_RATE = 0.35
+
+
+# --- Strict-Compliance Thresholds (academic baseline) -----------------------
+# Overfit / cheater caps — REJECT if a metric exceeds the cap.
+PF_OVERFIT_CAP        = 2.5
+WIN_RATE_OVERFIT_CAP  = 0.70
+SHARPE_OVERFIT_CAP    = 2.0
+SORTINO_OVERFIT_CAP   = 2.5
+
+# Hard floors — REJECT if a metric falls below the floor (or above, for MDD).
+PF_FLOOR              = 1.2
+WIN_RATE_FLOOR        = 0.35
+MDD_CEILING_FLOOR     = 0.30   # MDD strictly greater than 0.30 → reject
+TRADE_COUNT_FLOOR     = 150
+SHARPE_FLOOR          = 0.5
+SORTINO_FLOOR         = 0.7
+EXPECTANCY_FLOOR      = 0.0    # expectancy must be strictly > 0
+
+# Strict-lane bars — assign `lane="strict"` only when ALL are met.
+PF_STRICT             = 1.3
+WIN_RATE_STRICT       = 0.40
+MDD_CEILING_STRICT    = 0.25
+TRADE_COUNT_STRICT    = 200
+SHARPE_STRICT         = 0.7
+SORTINO_STRICT        = 0.9
+
+
+@dataclass(frozen=True)
+class GateMetrics:
+    """The 7 metrics that drive lane assignment."""
+    profit_factor: float
+    win_rate: float
+    max_drawdown: float
+    total_trades: int
+    sharpe: float
+    sortino: float
+    expectancy: float
+
+
+def assign_lane(m: GateMetrics) -> tuple[Optional[str], Optional[str]]:
+    """Pure decision function returning (lane, reason).
+
+    Order matters:
+      1. Overfit caps first — a "too good" metric is more diagnostic than
+         a "too bad" one (it usually means data leakage / lookahead).
+      2. Hard floors second — anything missing a floor is unviable.
+      3. Lane assignment last — passing all strict bars yields "strict",
+         otherwise "research".
+    """
+    # 1. Overfit / cheater caps
+    if m.profit_factor > PF_OVERFIT_CAP:
+        return None, f"overfit_profit_factor: {m.profit_factor:.3f} > {PF_OVERFIT_CAP}"
+    if m.win_rate > WIN_RATE_OVERFIT_CAP:
+        return None, f"overfit_win_rate: {m.win_rate:.3f} > {WIN_RATE_OVERFIT_CAP}"
+    if m.sharpe > SHARPE_OVERFIT_CAP:
+        return None, f"overfit_sharpe: {m.sharpe:.3f} > {SHARPE_OVERFIT_CAP}"
+    if m.sortino > SORTINO_OVERFIT_CAP:
+        return None, f"overfit_sortino: {m.sortino:.3f} > {SORTINO_OVERFIT_CAP}"
+
+    # 2. Hard floors
+    if m.profit_factor < PF_FLOOR:
+        return None, f"profit_factor_below_floor: {m.profit_factor:.3f} < {PF_FLOOR}"
+    if m.win_rate < WIN_RATE_FLOOR:
+        return None, f"win_rate_below_floor: {m.win_rate:.3f} < {WIN_RATE_FLOOR}"
+    if m.max_drawdown > MDD_CEILING_FLOOR:
+        return None, f"max_drawdown_above_ceiling: {m.max_drawdown:.3f} > {MDD_CEILING_FLOOR}"
+    if m.total_trades < TRADE_COUNT_FLOOR:
+        return None, f"trade_count_below_floor: {m.total_trades} < {TRADE_COUNT_FLOOR}"
+    if m.sharpe < SHARPE_FLOOR:
+        return None, f"sharpe_below_floor: {m.sharpe:.3f} < {SHARPE_FLOOR}"
+    if m.sortino < SORTINO_FLOOR:
+        return None, f"sortino_below_floor: {m.sortino:.3f} < {SORTINO_FLOOR}"
+    if m.expectancy <= EXPECTANCY_FLOOR:
+        return None, f"expectancy_non_positive: {m.expectancy:.6f} <= 0"
+
+    # 3. Lane assignment
+    strict = (
+        m.profit_factor   >= PF_STRICT
+        and m.win_rate    >= WIN_RATE_STRICT
+        and m.max_drawdown<= MDD_CEILING_STRICT
+        and m.total_trades>= TRADE_COUNT_STRICT
+        and m.sharpe      >= SHARPE_STRICT
+        and m.sortino     >= SORTINO_STRICT
+        and m.expectancy   > 0
+    )
+    return ("strict" if strict else "research"), None
 
 
 @dataclass
@@ -81,6 +178,7 @@ class GateResult:
     lane: Optional[str] = None
     variance: dict[str, Any] = field(default_factory=dict)
     winrate: dict[str, Any] = field(default_factory=dict)
+    metrics: dict[str, Any] = field(default_factory=dict)
     signal_counts: dict[str, int] = field(default_factory=dict)
     artifacts: dict[str, str] = field(default_factory=dict)
 
@@ -94,6 +192,11 @@ class GateResult:
             "win_rate": self.winrate.get("win_rate", 0.0),
             "trade_count": self.winrate.get("total_trades", 0),
             "avg_pnl": self.winrate.get("avg_pnl", 0.0),
+            "profit_factor": self.metrics.get("profit_factor", 0.0),
+            "max_drawdown": self.metrics.get("max_drawdown", 0.0),
+            "sharpe": self.metrics.get("sharpe", 0.0),
+            "sortino": self.metrics.get("sortino", 0.0),
+            "expectancy": self.metrics.get("expectancy", 0.0),
             "evaluated_at": self.evaluated_at,
         }
 
@@ -233,87 +336,58 @@ def run_statistical_gate(
         "threshold": MIN_SIGNAL_ACTIVITY_PCT,
         "passed": variance_passed,
     }
+    base_result.winrate = {
+        "win_rate": float(winrate_stats["win_rate"]),
+        "total_trades": int(winrate_stats["total_trades"]),
+        "avg_pnl": float(winrate_stats["avg_pnl"]),
+    }
+
     if not variance_passed:
         base_result.reason = (
             f"variance_below_threshold: {activity_pct:.2%} < {MIN_SIGNAL_ACTIVITY_PCT:.0%}"
         )
         logger.info(f"[GATE] {strategy.name} — {base_result.reason}")
-        base_result.winrate = {
-            "win_rate": winrate_stats["win_rate"],
-            "total_trades": winrate_stats["total_trades"],
-            "avg_pnl": winrate_stats["avg_pnl"],
-            "min_trades_threshold": MIN_TRADE_COUNT,
-            "strict_winrate_threshold": MIN_WIN_RATE,
-            "research_winrate_threshold": RESEARCH_MIN_WIN_RATE,
-            "positive_expectancy_required": True,
-            "expectancy_passed": winrate_stats["avg_pnl"] > 0.0,
-            "passed": False,
-            "informational_only": True,
-        }
+        base_result.winrate["informational_only"] = True
         _write_artifacts(
             eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,
         )
         return base_result
 
-    # Step 4 - expectancy lane check.
-    total_trades = int(winrate_stats["total_trades"])
-    win_rate = float(winrate_stats["win_rate"])
-    avg_pnl = float(winrate_stats["avg_pnl"])
-    has_enough_trades = total_trades >= MIN_TRADE_COUNT
-    has_positive_expectancy = avg_pnl > 0.0
-    strict_passed = (
-        has_enough_trades
-        and has_positive_expectancy
-        and win_rate >= MIN_WIN_RATE
+    # Step 4 — strict-compliance lane assignment over the 7 metrics.
+    bar_returns = compute_bar_returns(ohlcv_df["close"], signals)
+    equity = compute_equity_curve(bar_returns)
+    trade_pnl = (
+        trades_df["pnl"]
+        if not trades_df.empty
+        else pd.Series(dtype=float)
     )
-    research_passed = (
-        has_enough_trades
-        and has_positive_expectancy
-        and RESEARCH_MIN_WIN_RATE <= win_rate < MIN_WIN_RATE
+    metrics = GateMetrics(
+        profit_factor = compute_profit_factor(trade_pnl),
+        win_rate      = float(winrate_stats["win_rate"]),
+        max_drawdown  = compute_max_drawdown(equity),
+        total_trades  = int(winrate_stats["total_trades"]),
+        sharpe        = compute_sharpe(bar_returns),
+        sortino       = compute_sortino(bar_returns),
+        expectancy    = compute_expectancy(trade_pnl),
     )
-    lane = "strict" if strict_passed else "research" if research_passed else None
-    base_result.winrate = {
-        "win_rate": win_rate,
-        "total_trades": total_trades,
-        "avg_pnl": avg_pnl,
-        "min_trades_threshold": MIN_TRADE_COUNT,
-        "strict_winrate_threshold": MIN_WIN_RATE,
-        "research_winrate_threshold": RESEARCH_MIN_WIN_RATE,
-        "positive_expectancy_required": True,
-        "expectancy_passed": has_positive_expectancy,
-        "strict_passed": strict_passed,
-        "research_passed": research_passed,
-        "passed": lane is not None,
-    }
-    if lane is None:
-        if total_trades < MIN_TRADE_COUNT:
-            base_result.reason = (
-                f"too_few_trades: {total_trades} < {MIN_TRADE_COUNT}"
-            )
-        elif avg_pnl <= 0.0:
-            base_result.reason = (
-                f"non_positive_expectancy: avg_pnl={avg_pnl:.6f} <= 0"
-            )
-        else:
-            base_result.reason = (
-                f"winrate_below_threshold: "
-                f"{win_rate:.1%} < {RESEARCH_MIN_WIN_RATE:.0%}"
-            )
-        logger.info(f"[GATE] {strategy.name} — {base_result.reason}")
-        _write_artifacts(
-            eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,
-        )
-        return base_result
+    base_result.metrics = asdict(metrics)
 
-    # All checks passed
-    base_result.passed = True
+    lane, reason = assign_lane(metrics)
     base_result.lane = lane
-    logger.info(
-        f"[GATE] {strategy.name} PASSED ({lane}) — "
-        f"activity={activity_pct:.1%}, "
-        f"winrate={win_rate:.1%} over {total_trades} trades, "
-        f"avg_pnl={avg_pnl:.4%}"
-    )
+    base_result.reason = reason
+    base_result.passed = lane is not None
+
+    if lane is None:
+        logger.info(f"[GATE] {strategy.name} — {reason}")
+    else:
+        logger.info(
+            f"[GATE] {strategy.name} PASSED ({lane}) — "
+            f"PF={metrics.profit_factor:.2f}, WR={metrics.win_rate:.1%}, "
+            f"MDD={metrics.max_drawdown:.1%}, trades={metrics.total_trades}, "
+            f"Sharpe={metrics.sharpe:.2f}, Sortino={metrics.sortino:.2f}, "
+            f"Exp={metrics.expectancy:.4%}"
+        )
+
     _write_artifacts(
         eval_dir, base_result, signals, ohlcv_df, strategy.name, trades_df,
     )
